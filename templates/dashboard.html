@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Dashboard <span class="subtitle">{{ month }}</span></h1>
+
+<div class="cards">
+    <div class="card card-green">
+        <div class="card-label">Income (this month)</div>
+        <div class="card-value">&pound;{{ "%.2f"|format(income_total) }}</div>
+    </div>
+    <div class="card card-red">
+        <div class="card-label">Expenses (this month)</div>
+        <div class="card-value">&pound;{{ "%.2f"|format(expenses_total) }}</div>
+    </div>
+    <div class="card card-blue">
+        <div class="card-label">Profit (this month)</div>
+        <div class="card-value">&pound;{{ "%.2f"|format(income_total - expenses_total) }}</div>
+    </div>
+    <div class="card card-orange">
+        <div class="card-label">Unpaid invoices</div>
+        <div class="card-value">{{ invoices_unpaid }} (&pound;{{ "%.2f"|format(invoices_total) }})</div>
+    </div>
+</div>
+
+<div class="grid-2">
+    <section>
+        <h2>Recent Expenses</h2>
+        <table>
+            <thead><tr><th>Date</th><th>Reference</th><th>Category</th><th class="num">Amount</th></tr></thead>
+            <tbody>
+            {% for e in recent_expenses %}
+            <tr><td>{{ e.date }}</td><td>{{ e.reference }}</td><td>{{ e.category }}</td><td class="num">&pound;{{ "%.2f"|format(e.amount) }}</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        <a href="/expenses" class="btn btn-sm">View all</a>
+    </section>
+
+    <section>
+        <h2>Recent Income</h2>
+        <table>
+            <thead><tr><th>Date</th><th>Reference</th><th class="num">Amount</th></tr></thead>
+            <tbody>
+            {% for i in recent_income %}
+            <tr><td>{{ i.date }}</td><td>{{ i.reference }}</td><td class="num">&pound;{{ "%.2f"|format(i.amount) }}</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        <a href="/income" class="btn btn-sm">View all</a>
+    </section>
+</div>
+
+<section>
+    <h2>Recent Invoices</h2>
+    <table>
+        <thead><tr><th>Invoice #</th><th>Customer</th><th>Date</th><th>Status</th><th class="num">Total</th></tr></thead>
+        <tbody>
+        {% for inv in recent_invoices %}
+        <tr>
+            <td><a href="/invoices/{{ inv.id }}">{{ inv.invoice_number }}</a></td>
+            <td>{{ inv.customer_name }}</td>
+            <td>{{ inv.date }}</td>
+            <td><span class="badge badge-{{ inv.status }}">{{ inv.status }}</span></td>
+            <td class="num">&pound;{{ "%.2f"|format(inv.total) }}</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</section>
+{% endblock %}

@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title_extra %} — Income{% endblock %}
+{% block content %}
+<h1>Income</h1>
+
+<form method="POST" action="/income/add" class="inline-form">
+    <input type="number" name="amount" step="0.01" placeholder="Amount" required>
+    <input type="date" name="date" required>
+    <input type="text" name="reference" placeholder="Reference / description">
+    <button type="submit" class="btn">Add Income</button>
+</form>
+
+<table>
+    <thead><tr><th>Date</th><th>Reference</th><th class="num">Amount</th><th></th></tr></thead>
+    <tbody>
+    {% for i in income %}
+    <tr>
+        <td>{{ i.date }}</td>
+        <td>{{ i.reference }}</td>
+        <td class="num">&pound;{{ "%.2f"|format(i.amount) }}</td>
+        <td><form method="POST" action="/income/{{ i.id }}/delete" class="inline" data-confirm="Permanently delete income of £{{ '%.2f'|format(i.amount) }} on {{ i.date }} ({{ i.reference or 'no reference' }})?&#10;&#10;This cannot be undone."><button class="btn btn-sm btn-danger">X</button></form></td>
+    </tr>
+    {% endfor %}
+    </tbody>
+</table>
+{% endblock %}

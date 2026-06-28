@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ app_name }}{% block title_extra %}{% endblock %}</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <nav>
+        <div class="nav-brand">{{ business_name }}</div>
+        <button class="nav-toggle" onclick="document.querySelector('.nav-links').classList.toggle('open')" aria-label="Menu">&#9776;</button>
+        <div class="nav-links">
+            <a href="/" class="{% if request.path == '/' %}active{% endif %}">Dashboard</a>
+            <a href="/expenses" class="{% if '/expenses' in request.path %}active{% endif %}">Expenses</a>
+            <a href="/income" class="{% if '/income' in request.path %}active{% endif %}">Income</a>
+            <a href="/invoices" class="{% if '/invoices' in request.path %}active{% endif %}">Invoices</a>
+            <a href="/customers" class="{% if '/customers' in request.path %}active{% endif %}">Customers</a>
+            <a href="/reports" class="{% if '/reports' in request.path %}active{% endif %}">Reports</a>
+            <a href="/export" class="{% if '/export' in request.path %}active{% endif %}">Export</a>
+            <a href="/invoice-settings" class="{% if '/invoice-settings' in request.path %}active{% endif %}">Invoice Settings</a>
+            <a href="/webhooks" class="{% if '/webhooks' in request.path %}active{% endif %}">Webhooks</a>
+            <a href="/backup" class="{% if '/backup' in request.path %}active{% endif %}">Backup</a>
+        </div>
+    </nav>
+    <main>
+        {% block content %}{% endblock %}
+    </main>
+    <script src="/static/app.js"></script>
+</body>
+</html>

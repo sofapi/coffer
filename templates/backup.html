@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title_extra %} — Backup &amp; Restore{% endblock %}
+{% block content %}
+<h1>Backup &amp; Restore</h1>
+<p>Your entire Coffer database — customers, invoices, income and expenses — in a
+   single file. Download one regularly and keep it somewhere safe.</p>
+
+{% if message %}<div class="card card-green">{{ message }}</div>{% endif %}
+{% if error %}<div class="card card-red">{{ error }}</div>{% endif %}
+
+<form class="form-card">
+    <h2>Download backup</h2>
+    <p class="hint" style="margin-bottom:0.75rem;">Saves a consistent snapshot
+       (<code>coffer-backup-YYYYMMDD-HHMMSS.db</code>) to your computer.</p>
+    <a href="/backup/download" class="btn btn-green">Download backup</a>
+</form>
+
+<form class="form-card" method="POST" action="/backup/restore"
+      enctype="multipart/form-data"
+      onsubmit="return confirm('Restore this backup? It will REPLACE all current data in Coffer. This cannot be undone.');">
+    <h2>Restore from backup</h2>
+    <p class="hint" style="margin-bottom:0.5rem;">Upload a Coffer
+       <code>.db</code> backup. <strong>This replaces everything currently in
+       the app.</strong> Download a fresh backup first if you are unsure.</p>
+    <div class="form-row">
+        <input type="file" name="backup" accept=".db,.sqlite,.sqlite3"
+               required style="max-width:400px;">
+    </div>
+    <div class="mt">
+        <button type="submit" class="btn btn-danger">Restore (overwrite all data)</button>
+    </div>
+</form>
+{% endblock %}

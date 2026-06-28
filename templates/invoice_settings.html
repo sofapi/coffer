@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title_extra %} — Invoice Settings{% endblock %}
+{% block content %}
+<h1>Invoice Settings</h1>
+<p>Customise your invoice appearance. Changes apply to all future PDFs.</p>
+
+<form method="POST" action="/invoice-settings/save" enctype="multipart/form-data" class="form-card">
+    <h2>Business Name</h2>
+    <div class="form-row">
+        <input type="text" name="business_name" value="{{ settings.get('business_name', '') }}" placeholder="Your business name" style="max-width:400px;">
+    </div>
+
+    <h2>Logo</h2>
+    {% if settings.get('logo_path') %}
+    <p style="margin-bottom:0.5rem;">Current logo: <strong>{{ settings['logo_path'].split('/')[-1] }}</strong></p>
+    {% else %}
+    <p style="color:#888;margin-bottom:0.5rem;">No logo uploaded</p>
+    {% endif %}
+    <div class="form-row">
+        <input type="file" name="logo" accept=".jpg,.jpeg,.png">
+    </div>
+    <p class="hint">JPEG or PNG. Leave blank to keep the current logo.</p>
+
+    <h2>Logo Position &amp; Size</h2>
+    <p class="hint" style="margin-bottom:0.5rem;">Values are in mm from the top-left of the page. Width controls the size; set height to 0 for automatic aspect ratio.</p>
+    <div class="form-row">
+        <label style="flex:0;">X <input type="number" name="logo_x" value="{{ settings.get('logo_x', '10') }}" step="1" class="short"></label>
+        <label style="flex:0;">Y <input type="number" name="logo_y" value="{{ settings.get('logo_y', '8') }}" step="1" class="short"></label>
+        <label style="flex:0;">Width <input type="number" name="logo_w" value="{{ settings.get('logo_w', '40') }}" step="1" class="short"></label>
+        <label style="flex:0;">Height <input type="number" name="logo_h" value="{{ settings.get('logo_h', '0') }}" step="1" class="short"></label>
+    </div>
+
+    <h2>Invoice Footer Message</h2>
+    <p class="hint" style="margin-bottom:0.5rem;">Appears centred at the bottom of every invoice. Use it for bank details, thank-you messages, etc.</p>
+    <textarea name="invoice_footer" rows="3" style="width:100%;max-width:500px;">{{ settings.get('invoice_footer', '') }}</textarea>
+
+    <div style="margin-top:1rem;display:flex;gap:0.5rem;flex-wrap:wrap;">
+        <button type="submit" class="btn">Save Settings</button>
+        <a href="/invoice-settings/preview-pdf" target="_blank" class="btn btn-green">Preview Sample PDF</a>
+        {% if settings.get('logo_path') %}
+        <button type="button" class="btn btn-danger" onclick="document.getElementById('remove-logo-form').submit();">Remove Logo</button>
+        {% endif %}
+    </div>
+</form>
+
+<form id="remove-logo-form" method="POST" action="/invoice-settings/remove-logo" style="display:none;"></form>
+
+{% endblock %}

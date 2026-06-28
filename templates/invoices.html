@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title_extra %} — Invoices{% endblock %}
+{% block content %}
+<h1>Invoices</h1>
+
+<form method="POST" action="/invoices/create" class="form-card">
+    <h3>Create Invoice</h3>
+    <div class="form-row">
+        <select name="customer_id" required>
+            <option value="">Select customer...</option>
+            {% for c in customers %}
+            <option value="{{ c.id }}">{{ c.name }}</option>
+            {% endfor %}
+        </select>
+        <input type="date" name="date" required>
+        <input type="date" name="due_date" placeholder="Due date">
+    </div>
+    <div class="form-row">
+        <textarea name="notes" placeholder="Notes" rows="2"></textarea>
+    </div>
+    <button type="submit" class="btn">Create Invoice</button>
+</form>
+
+<table>
+    <thead><tr><th>Invoice #</th><th>Customer</th><th>Date</th><th>Status</th><th class="num">Total</th><th></th></tr></thead>
+    <tbody>
+    {% for inv in invoices %}
+    <tr>
+        <td><a href="/invoices/{{ inv.id }}">{{ inv.invoice_number }}</a></td>
+        <td>{{ inv.customer_name }}</td>
+        <td>{{ inv.date }}</td>
+        <td><span class="badge badge-{{ inv.status }}">{{ inv.status }}</span></td>
+        <td class="num">&pound;{{ "%.2f"|format(inv.total) }}</td>
+        <td>
+            <a href="/invoices/{{ inv.id }}/pdf" class="btn btn-sm" target="_blank">PDF</a>
+            <form method="POST" action="/invoices/{{ inv.id }}/delete" class="inline" data-confirm="Permanently delete invoice {{ inv.invoice_number }} for {{ inv.customer_name }} (£{{ '%.2f'|format(inv.total) }})?&#10;&#10;This cannot be undone."><button class="btn btn-sm btn-danger">X</button></form>
+        </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+</table>
+{% endblock %}

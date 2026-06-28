@@ -1,0 +1,17 @@
+# Coffer — build-from-source override (contributors / local development).
+#
+# The base docker-compose.yml pulls the prebuilt GHCR image. Layer this on top
+# to build locally from the Dockerfile instead:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
+#
+# It tags the local build with the same name the base file expects, so a plain
+# `docker compose up -d` afterwards reuses your build instead of pulling.
+
+services:
+  coffer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ghcr.io/sofapi/coffer:latest
+    pull_policy: build

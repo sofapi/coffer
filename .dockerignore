@@ -1,0 +1,24 @@
+# Keep data, secrets and local cruft OUT of the build context / image.
+.git
+.gitignore
+.github/
+.claude/
+.env
+.env.*
+!.env.example
+data/
+*.db
+*.sqlite*
+*.db-wal
+*.db-shm
+invoice_logo.*
+backups/
+*.bak
+*.csv
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.md
+docker-compose*.yml
+Dockerfile

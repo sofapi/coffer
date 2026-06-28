@@ -1,0 +1,60 @@
+# ─────────────────────────────────────────────────────────────────────────
+#  Coffer — .gitignore
+#  See DATA-SAFETY.md. Nothing in here that holds real data should ever be
+#  committed. When in doubt, leave it out.
+# ─────────────────────────────────────────────────────────────────────────
+
+# --- Live data & uploads — NEVER commit -----------------------------------
+# All runtime state (the SQLite database + uploaded invoice logos) lives in
+# data/. The directory is tracked only via data/.gitkeep; its contents are not.
+data/*
+!data/.gitkeep
+
+# Databases anywhere, plus SQLite WAL/SHM sidecars
+*.db
+*.sqlite
+*.sqlite3
+*.db-wal
+*.db-shm
+*.db-journal
+
+# Uploaded assets (logos etc. — may be personal)
+invoice_logo.*
+
+# --- Secrets & environment -------------------------------------------------
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.crt
+*.secret
+secrets/
+
+# --- Backups & data exports (may contain personal/financial data) ----------
+backups/
+*.bak
+*.backup
+*.dump
+*.tar
+*.tar.gz
+*.zip
+*.csv
+
+# --- Local tooling & editor ------------------------------------------------
+.claude/
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# --- Python runtime --------------------------------------------------------
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+
+# --- Local compose override (your real host paths) — example is tracked ----
+docker-compose.override.yml

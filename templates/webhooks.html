@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title_extra %} — Webhooks{% endblock %}
+{% block content %}
+<h1>Webhooks</h1>
+<p>Configure webhook URLs to receive notifications (e.g. for n8n automation).</p>
+
+<form method="POST" action="/webhooks/add" class="inline-form">
+    <input type="url" name="url" placeholder="https://your-n8n-instance/webhook/..." required style="flex:2">
+    <select name="event">
+        <option value="invoice.created">invoice.created</option>
+    </select>
+    <button type="submit" class="btn">Add Webhook</button>
+</form>
+
+<table>
+    <thead><tr><th>URL</th><th>Event</th><th>Status</th><th></th></tr></thead>
+    <tbody>
+    {% for w in webhooks %}
+    <tr>
+        <td style="word-break:break-all">{{ w.url }}</td>
+        <td>{{ w.event }}</td>
+        <td>{% if w.active %}<span class="badge badge-paid">active</span>{% else %}<span class="badge badge-unpaid">inactive</span>{% endif %}</td>
+        <td><form method="POST" action="/webhooks/{{ w.id }}/delete" class="inline" data-confirm="Permanently delete this webhook?&#10;&#10;This cannot be undone."><button class="btn btn-sm btn-danger">X</button></form></td>
+    </tr>
+    {% endfor %}
+    </tbody>
+</table>
+{% endblock %}

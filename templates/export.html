@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title_extra %} — Export CSV{% endblock %}
+{% block content %}
+<h1>Export to CSV</h1>
+<p>Download all incoming or outgoing records as CSV files. Optionally filter by date range (useful for tax returns).</p>
+
+<form class="card" onsubmit="return false;">
+    <h2>Date Range (optional)</h2>
+    <div class="inline-form">
+        <label>From <input type="date" id="export-from"></label>
+        <label>To <input type="date" id="export-to"></label>
+    </div>
+
+    <h2 style="margin-top:1.5rem;">Incoming</h2>
+    <p style="color:#666;margin-bottom:0.5rem;">Income entries + paid invoices</p>
+    <a id="btn-incoming" href="/export/incoming.csv" class="btn">Download Incoming CSV</a>
+
+    <h2 style="margin-top:1.5rem;">Outgoing</h2>
+    <p style="color:#666;margin-bottom:0.5rem;">All expense records with categories</p>
+    <a id="btn-outgoing" href="/export/outgoing.csv" class="btn">Download Outgoing CSV</a>
+</form>
+
+<script>
+(function() {
+    var fromEl = document.getElementById('export-from');
+    var toEl = document.getElementById('export-to');
+    var btnIn = document.getElementById('btn-incoming');
+    var btnOut = document.getElementById('btn-outgoing');
+
+    function updateLinks() {
+        var params = [];
+        if (fromEl.value) params.push('from=' + fromEl.value);
+        if (toEl.value) params.push('to=' + toEl.value);
+        var qs = params.length ? '?' + params.join('&') : '';
+        btnIn.href = '/export/incoming.csv' + qs;
+        btnOut.href = '/export/outgoing.csv' + qs;
+    }
+
+    fromEl.addEventListener('change', updateLinks);
+    toEl.addEventListener('change', updateLinks);
+})();
+</script>
+{% endblock %}

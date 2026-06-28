@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block title_extra %} — {{ invoice.invoice_number }}{% endblock %}
+{% block content %}
+<div class="invoice-header">
+    <div>
+        <h1>{{ invoice.invoice_number }}</h1>
+        <p>Customer: <a href="/customers/{{ customer.id }}">{{ customer.name }}</a></p>
+        <p>Date: {{ invoice.date }}{% if invoice.due_date %} | Due: {{ invoice.due_date }}{% endif %}</p>
+    </div>
+    <div class="invoice-actions">
+        <span class="badge badge-{{ invoice.status }} badge-lg">{{ invoice.status }}</span>
+        {% if invoice.status == 'unpaid' %}
+        <form method="POST" action="/invoices/{{ invoice.id }}/status" class="inline">
+            <input type="hidden" name="status" value="paid">
+            <button class="btn btn-green">Mark Paid</button>
+        </form>
+        {% else %}
+        <form method="POST" action="/invoices/{{ invoice.id }}/status" class="inline">
+            <input type="hidden" name="status" value="unpaid">
+            <button class="btn btn-orange">Mark Unpaid</button>
+        </form>
+        {% endif %}
+        <a href="/invoices/{{ invoice.id }}/pdf" class="btn" target="_blank">Preview PDF</a>
+        <a href="/invoices/{{ invoice.id }}/pdf?download=1" class="btn" download="{{ invoice.invoice_number }}.pdf">Download</a>
+        <button type="button" class="btn btn-green"
+                data-share-pdf="/invoices/{{ invoice.id }}/pdf?download=1"
+                data-share-name="{{ invoice.invoice_number }}.pdf"
+                data-share-title="Invoice {{ invoice.invoice_number }}">Share</button>
+    </div>
+</div>
+
+<h2>Line Items</h2>
+<table>
+    <thead><tr><th>Description</th><th>Date Attended</th><th class="num">Hours</th><th class="num">Rate</th><th class="num">Amount</th><th></th></tr></thead>
+    <tbody>
+    {% for l in lines %}
+    <tr>
+        <td>{{ l.description }}</td>
+        <td>{{ l.date_attended }}</td>
+        <td class="num">{{ "%.1f"|format(l.hours) if l.hours else "" }}</td>
+        <td class="num">{{ "%.2f"|format(l.rate) if l.rate else "" }}</td>
+        <td class="num">&pound;{{ "%.2f"|format(l.amount) }}</td>
+        <td><form method="POST" action="/invoices/{{ invoice.id }}/delete-line/{{ l.id }}" class="inline" data-confirm="Remove line &quot;{{ l.description }}&quot; (£{{ '%.2f'|format(l.amount) }}) from this invoice?"><button class="btn btn-sm btn-danger">X</button></form></td>
+    </tr>
+    {% endfor %}
+    <tr class="total-row">
+        <td colspan="4"><strong>Total</strong></td>
+        <td class="num"><strong>&pound;{{ "%.2f"|format(total) }}</strong></td>
+        <td></td>
+    </tr>
+    </tbody>
+</table>
+
+<form method="POST" action="/invoices/{{ invoice.id }}/add-line" class="form-card">
+    <h3>Add Line Item</h3>
+    <div class="form-row">
+        <input type="text" name="description" placeholder="Description" required>
+        <input type="date" name="date_attended" placeholder="Date attended">
+        <input type="number" name="hours" step="0.25" placeholder="Hours" class="short" id="line-hours">
+        <input type="number" name="rate" step="0.01" placeholder="Rate (&pound;/hr)" class="short" id="line-rate">
+        <input type="number" name="amount" step="0.01" placeholder="Amount (auto)" class="short" id="line-amount">
+        <button type="submit" class="btn">Add Line</button>
+    </div>
+    <p class="hint">Leave amount blank to auto-calculate from hours x rate</p>
+</form>
+
+<details class="mt">
+    <summary>Edit Invoice Details</summary>
+    <form method="POST" action="/invoices/{{ invoice.id }}/edit" class="form-card">
+        <div class="form-row">
+            <input type="date" name="date" value="{{ invoice.date }}">
+            <input type="date" name="due_date" value="{{ invoice.due_date }}">
+        </div>
+        <textarea name="notes" rows="2" placeholder="Notes">{{ invoice.notes }}</textarea>
+        <button type="submit" class="btn">Update</button>
+    </form>
+</details>
+{% endblock %}

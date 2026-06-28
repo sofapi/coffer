@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title_extra %} — {{ customer.name }}{% endblock %}
+{% block content %}
+<h1>{{ customer.name }}</h1>
+
+<form method="POST" action="/customers/{{ customer.id }}/edit" class="form-card">
+    <div class="form-row">
+        <input type="text" name="name" value="{{ customer.name }}" required>
+        <input type="email" name="email" value="{{ customer.email }}" placeholder="Email">
+        <input type="tel" name="phone" value="{{ customer.phone }}" placeholder="Phone">
+    </div>
+    <div class="form-row">
+        <textarea name="address" placeholder="Address" rows="2">{{ customer.address }}</textarea>
+        <textarea name="notes" placeholder="Notes" rows="2">{{ customer.notes }}</textarea>
+    </div>
+    <button type="submit" class="btn">Update</button>
+</form>
+
+<h2>Invoice History</h2>
+<table>
+    <thead><tr><th>Invoice #</th><th>Date</th><th>Status</th><th class="num">Total</th></tr></thead>
+    <tbody>
+    {% for inv in invoices %}
+    <tr>
+        <td><a href="/invoices/{{ inv.id }}">{{ inv.invoice_number }}</a></td>
+        <td>{{ inv.date }}</td>
+        <td><span class="badge badge-{{ inv.status }}">{{ inv.status }}</span></td>
+        <td class="num">&pound;{{ "%.2f"|format(inv.total) }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+</table>
+{% endblock %}

@@ -1,0 +1,29 @@
+# Coffer — invoice & expense tracking for small businesses.
+#
+# This file deploys the prebuilt image from GitHub Container Registry (GHCR).
+#   1. (optional) cp .env.example .env   and edit values.
+#   2. docker compose pull
+#   3. docker compose up -d
+#   4. open http://localhost:5000
+#
+# Update later: docker compose pull && docker compose up -d
+#
+# Build from source instead (contributors):
+#   docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
+
+services:
+  coffer:
+    image: ghcr.io/sofapi/coffer:${COFFER_IMAGE_TAG:-latest}
+    container_name: coffer
+    restart: unless-stopped
+    environment:
+      DB_PATH: ${DB_PATH:-/app/data/coffer.db}
+      TZ: ${TZ:-Europe/London}
+    volumes:
+      # Persistent data — the SQLite database and uploaded invoice logos.
+      # This is the ONLY thing you need to back up. Never commit it.
+      - ./data:/app/data
+    ports:
+      - "${COFFER_PORT:-5000}:5000"
+    labels:
+      - "com.centurylinklabs.watchtower.enable=false"

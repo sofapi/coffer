@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Reports <span class="subtitle">{{ period_label }}</span></h1>
+
+<form method="get" action="/reports" class="inline-form" style="margin-bottom:1.5rem;gap:0.5rem;flex-wrap:wrap;align-items:end">
+    <div>
+        <label for="ty">Tax Year</label>
+        <select name="ty" id="ty" onchange="this.form.submit()">
+        {% for opt in ty_options %}
+            <option value="{{ opt.value }}" {% if opt.value == selected_ty %}selected{% endif %}>{{ opt.label }}</option>
+        {% endfor %}
+        </select>
+    </div>
+    <div>
+        <label for="month">Month</label>
+        <select name="month" id="month" onchange="this.form.submit()">
+            <option value="">Full Year</option>
+        {% for m in months %}
+            <option value="{{ m.value }}" {% if m.value == selected_month %}selected{% endif %}>{{ m.label }}</option>
+        {% endfor %}
+        </select>
+    </div>
+</form>
+
+<div class="cards">
+    <div class="card card-green">
+        <div class="card-label">Income</div>
+        <div class="card-value">&pound;{{ "%.2f"|format(income_total) }}</div>
+    </div>
+    <div class="card card-red">
+        <div class="card-label">Expenses</div>
+        <div class="card-value">&pound;{{ "%.2f"|format(expenses_total) }}</div>
+    </div>
+    <div class="card card-blue">
+        <div class="card-label">Profit</div>
+        <div class="card-value">&pound;{{ "%.2f"|format(profit) }}</div>
+    </div>
+    <div class="card card-orange">
+        <div class="card-label">Unpaid Invoices</div>
+        <div class="card-value">{{ unpaid_count }} (&pound;{{ "%.2f"|format(unpaid_total) }})</div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title_extra %} — Customers{% endblock %}
+{% block content %}
+<h1>Customers</h1>
+
+<form method="POST" action="/customers/add" class="form-card">
+    <h3>Add Customer</h3>
+    <div class="form-row">
+        <input type="text" name="name" placeholder="Name" required>
+        <input type="email" name="email" placeholder="Email">
+        <input type="tel" name="phone" placeholder="Phone">
+    </div>
+    <div class="form-row">
+        <textarea name="address" placeholder="Address" rows="2"></textarea>
+        <textarea name="notes" placeholder="Notes" rows="2"></textarea>
+    </div>
+    <button type="submit" class="btn">Add Customer</button>
+</form>
+
+<table>
+    <thead><tr><th>Name</th><th>Email</th><th>Phone</th><th></th></tr></thead>
+    <tbody>
+    {% for c in customers %}
+    <tr>
+        <td><a href="/customers/{{ c.id }}">{{ c.name }}</a></td>
+        <td>{{ c.email }}</td>
+        <td>{{ c.phone }}</td>
+        <td><form method="POST" action="/customers/{{ c.id }}/delete" class="inline" data-confirm="Permanently delete customer {{ c.name }}?&#10;&#10;This cannot be undone."><button class="btn btn-sm btn-danger">X</button></form></td>
+    </tr>
+    {% endfor %}
+    </tbody>
+</table>
+{% endblock %}
