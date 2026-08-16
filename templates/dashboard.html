@@ -1,69 +1,203 @@
 {% extends "base.html" %}
-{% block content %}
-<h1>Dashboard <span class="subtitle">{{ month }}</span></h1>
+{% block title_extra %} — Dashboard{% endblock %}
 
-<div class="cards">
-    <div class="card card-green">
-        <div class="card-label">Income (this month)</div>
-        <div class="card-value">&pound;{{ "%.2f"|format(income_total) }}</div>
+{#- A metric tile. `polarity` says which direction is good, so the colour
+    encodes meaning rather than arithmetic sign: rising costs are not a win. -#}
+{% macro metric(key, label, value, foot=None, negative=False, note=None) %}
+<div class="metric" data-metric="{{ key }}">
+    <div class="metric-label">
+        {{ label }}
+        {%- if note %} <button type="button" class="metric-note" title="{{ note }}" aria-label="{{ label }}: {{ note }}">i</button>{% endif %}
     </div>
-    <div class="card card-red">
-        <div class="card-label">Expenses (this month)</div>
-        <div class="card-value">&pound;{{ "%.2f"|format(expenses_total) }}</div>
+    <div class="metric-value{% if negative %} is-negative{% endif %}">{{ value }}</div>
+    <div class="metric-foot">{{ foot if foot else '&nbsp;'|safe }}</div>
+</div>
+{% endmacro %}
+
+{% macro change(cmp, polarity=1) %}
+    {%- if cmp.pct is not none -%}
+        {%- set good = (cmp.pct > 0) == (polarity == 1) -%}
+        {%- set cls = 'trend-flat' if cmp.pct|round(4) == 0 else ('trend-up' if good else 'trend-down') -%}
+        <span class="trend {{ cls }}">
+            <span class="trend-arrow" aria-hidden="true">{{ '&#9650;'|safe if cmp.pct > 0 else ('&#9660;'|safe if cmp.pct < 0 else '&#9679;'|safe) }}</span>
+            {{ '%.1f'|format(cmp.pct|abs * 100) }}%
+        </span> vs previous
+    {%- elif cmp.delta -%}
+        {%- set good = (cmp.delta > 0) == (polarity == 1) -%}
+        <span class="trend {{ 'trend-up' if good else 'trend-down' }}">{{ cmp.delta|money }}</span> vs previous
+    {%- else -%}
+        <span class="trend trend-flat">No change</span> vs previous
+    {%- endif -%}
+{% endmacro %}
+
+{% block content %}
+{% set w = data.window %}
+{% set t = data.totals %}
+{% set c = data.comparison %}
+{% set o = data.outstanding %}
+
+<div class="section-head">
+    <h1>Dashboard <span class="subtitle">{{ w.label }}</span></h1>
+</div>
+
+<div class="panel chart-panel" id="performance-chart">
+    <div class="panel-head">
+        <div>
+            <div class="panel-title">Financial performance</div>
+            <div class="panel-sub">Revenue and costs per month, with net alongside.</div>
+        </div>
+        <div class="toolbar">
+            <div class="segmented" role="group" aria-label="Chart period">
+                {% for p in periods if p.value != 'custom' %}
+                <a href="?period={{ p.value }}" data-period-link
+                   class="{% if w.period == p.value %}active{% endif %}"
+                   {% if w.period == p.value %}aria-current="true"{% endif %}>{{ p.label }}</a>
+                {% endfor %}
+            </div>
+            <form method="get" action="/" class="range-form">
+                <input type="hidden" name="period" value="custom">
+                <label for="range-from">From</label>
+                <input type="date" id="range-from" name="from" value="{{ custom_from }}" max="{{ today }}">
+                <label for="range-to">To</label>
+                <input type="date" id="range-to" name="to" value="{{ custom_to }}" max="{{ today }}">
+                <button type="submit" class="btn btn-sm btn-quiet">Apply</button>
+            </form>
+        </div>
     </div>
-    <div class="card card-blue">
-        <div class="card-label">Profit (this month)</div>
-        <div class="card-value">&pound;{{ "%.2f"|format(income_total - expenses_total) }}</div>
+
+    <div class="metrics">
+        {{ metric('invoiced', 'Invoiced', t.invoiced|money0, change(c.invoiced, 1),
+                  note='Value of every invoice issued in this period, paid or not.') }}
+        {{ metric('revenue', 'Revenue', t.revenue|money0, change(c.revenue, 1),
+                  note='Income entries plus paid invoices, dated in this period.') }}
+        {{ metric('costs', 'Costs', t.costs|money0, change(c.costs, -1),
+                  note='All recorded expenses in this period.') }}
+        {{ metric('net', 'Net', t.net|money0, change(c.net, 1), negative=(t.net < 0),
+                  note='Revenue minus recorded costs. Not gross profit — Coffer does not store cost of sales.') }}
+        {% if t.margin is not none %}
+            {{ metric('margin', 'Net margin', '%.1f%%'|format(t.margin * 100),
+                      (('%+.1f pts vs previous'|format(c.margin.delta * 100)) if c.margin.delta is not none else 'No comparable period'),
+                      negative=(t.margin < 0),
+                      note='Net divided by revenue. A cash margin, not an accounting profit margin.') }}
+        {% else %}
+            {{ metric('margin', 'Net margin', '—', 'No revenue in period',
+                      note='Undefined without revenue — shown as a dash rather than 0%.') }}
+        {% endif %}
+        {{ metric('outstanding', 'Outstanding',
+                  o.total|money0,
+                  (('<span class="trend trend-down">' ~ o.overdue_total|money0 ~ ' overdue</span>')|safe if o.overdue_total else (o.count ~ ' unpaid invoice' ~ ('' if o.count == 1 else 's'))),
+                  note='Unpaid invoice balance as at today, across all time — not limited to the selected period.') }}
     </div>
-    <div class="card card-orange">
-        <div class="card-label">Unpaid invoices</div>
-        <div class="card-value">{{ invoices_unpaid }} (&pound;{{ "%.2f"|format(invoices_total) }})</div>
+
+    {# Suppressed on a brand new install, where it is a row of zeroes. #}
+    {% if data.trend and data.has_data %}
+    <p class="hint" style="margin:0 0 1rem;">
+        Month over month ({{ data.trend.previous_month }} &rarr; {{ data.trend.month }}):
+        revenue {{ data.trend.revenue_delta|money0 }},
+        costs {{ data.trend.costs_delta|money0 }},
+        net {{ data.trend.net_delta|money0 }}.
+        {{ data.trend.month }} may still be in progress.
+    </p>
+    {% endif %}
+
+    <div class="chart-legend" role="group" aria-label="Show or hide chart series"></div>
+    <div class="chart-frame">
+        {# Server-rendered fallback: without JS the figures are still all here,
+           in the table below. #}
+        <noscript>
+            <div class="empty empty-inline">
+                <span class="empty-title">Chart needs JavaScript</span>
+                <p>The same monthly figures are listed in the table below.</p>
+            </div>
+        </noscript>
     </div>
+
+    <p class="chart-note">
+        <strong>Net</strong> is revenue minus recorded costs, not gross or net profit:
+        Coffer stores expenses as a flat list, with no cost of sales, tax or depreciation.
+        Revenue counts income entries and paid invoices separately — if you record an
+        invoice payment as income <em>and</em> mark the invoice paid, it is counted twice.
+        Paid invoices are recognised on their issue date because Coffer does not store
+        payment dates.
+    </p>
+
+    <details class="mt" style="box-shadow:none;border:1px solid var(--border);">
+        <summary>Monthly figures as a table</summary>
+        <table id="performance-table" style="margin-bottom:0;"></table>
+    </details>
 </div>
 
 <div class="grid-2">
     <section>
-        <h2>Recent Expenses</h2>
+        <div class="section-head"><h2>Recent expenses</h2><a href="/expenses" class="btn btn-sm btn-quiet">View all</a></div>
+        {% if recent_expenses %}
         <table>
             <thead><tr><th>Date</th><th>Reference</th><th>Category</th><th class="num">Amount</th></tr></thead>
             <tbody>
             {% for e in recent_expenses %}
-            <tr><td>{{ e.date }}</td><td>{{ e.reference }}</td><td>{{ e.category }}</td><td class="num">&pound;{{ "%.2f"|format(e.amount) }}</td></tr>
+            <tr><td>{{ e.date }}</td><td>{{ e.reference }}</td><td>{{ e.category }}</td><td class="num">{{ e.amount|money }}</td></tr>
             {% endfor %}
             </tbody>
         </table>
-        <a href="/expenses" class="btn btn-sm">View all</a>
+        {% else %}
+        <div class="empty">
+            <span class="empty-title">No expenses yet</span>
+            <p>Log what you spend and it will appear here and in the costs series above.</p>
+            <a href="/expenses" class="btn btn-sm">Add an expense</a>
+        </div>
+        {% endif %}
     </section>
 
     <section>
-        <h2>Recent Income</h2>
+        <div class="section-head"><h2>Recent income</h2><a href="/income" class="btn btn-sm btn-quiet">View all</a></div>
+        {% if recent_income %}
         <table>
             <thead><tr><th>Date</th><th>Reference</th><th class="num">Amount</th></tr></thead>
             <tbody>
             {% for i in recent_income %}
-            <tr><td>{{ i.date }}</td><td>{{ i.reference }}</td><td class="num">&pound;{{ "%.2f"|format(i.amount) }}</td></tr>
+            <tr><td>{{ i.date }}</td><td>{{ i.reference }}</td><td class="num">{{ i.amount|money }}</td></tr>
             {% endfor %}
             </tbody>
         </table>
-        <a href="/income" class="btn btn-sm">View all</a>
+        {% else %}
+        <div class="empty">
+            <span class="empty-title">No income entries yet</span>
+            <p>Money received outside of an invoice goes here.</p>
+            <a href="/income" class="btn btn-sm">Add income</a>
+        </div>
+        {% endif %}
     </section>
 </div>
 
-<section>
-    <h2>Recent Invoices</h2>
+<section class="mt">
+    <div class="section-head"><h2>Recent invoices</h2><a href="/invoices" class="btn btn-sm btn-quiet">View all</a></div>
+    {% if recent_invoices %}
     <table>
-        <thead><tr><th>Invoice #</th><th>Customer</th><th>Date</th><th>Status</th><th class="num">Total</th></tr></thead>
+        <thead><tr><th>Invoice #</th><th>Customer</th><th>Date</th><th>Due</th><th>Status</th><th class="num">Total</th></tr></thead>
         <tbody>
         {% for inv in recent_invoices %}
         <tr>
             <td><a href="/invoices/{{ inv.id }}">{{ inv.invoice_number }}</a></td>
             <td>{{ inv.customer_name }}</td>
             <td>{{ inv.date }}</td>
-            <td><span class="badge badge-{{ inv.status }}">{{ inv.status }}</span></td>
-            <td class="num">&pound;{{ "%.2f"|format(inv.total) }}</td>
+            <td>{{ inv.due_date or '—' }}</td>
+            <td>{% set s = invoice_status(inv) %}<span class="badge badge-{{ s }}">{{ s }}</span></td>
+            <td class="num">{{ inv.total|money }}</td>
         </tr>
         {% endfor %}
         </tbody>
     </table>
+    {% else %}
+    <div class="empty">
+        <span class="empty-title">No invoices yet</span>
+        <p>Add a customer, then create your first invoice — it will show up here and in the invoiced series above.</p>
+        <a href="/invoices" class="btn btn-sm">Create an invoice</a>
+    </div>
+    {% endif %}
 </section>
+{% endblock %}
+
+{% block scripts %}
+<script type="application/json" id="performance-data">{{ data|tojson }}</script>
+<script src="/static/chart.js"></script>
 {% endblock %}

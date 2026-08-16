@@ -1,0 +1,4 @@
+# Development-only tooling. Not installed into the runtime image.
+-r requirements.txt
+pytest==8.*
+ruff==0.14.*

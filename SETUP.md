@@ -25,7 +25,23 @@ database automatically — there is no migration step. Then:
 1. Go to **Invoice Settings** and set your **business name** (this drives the
    header on invoices and the app's nav bar) and upload a **logo** if you want
    one on your PDFs.
-2. Add a customer, create an invoice, log some income and expenses.
+2. Go to **Appearance** and pick a colour palette (optional — the default is
+   Coffer's original green).
+3. Add a customer, create an invoice, log some income and expenses.
+
+### Upgrading an existing install
+
+`docker compose pull && docker compose up -d`. **No migration step and no
+downtime beyond the container restart.**
+
+The appearance feature stores its preference as one row in the existing
+`settings` table. On boot Coffer inserts any settings introduced after the first
+release with `INSERT OR IGNORE`, so an older database picks up the default
+without a schema change and a value you have already chosen is never
+overwritten. No table is created, altered or dropped, so **rolling back to a
+previous image is safe** — the older code simply ignores the extra row.
+
+Take a backup first anyway (**Backup → Download backup**, or section 6 below).
 
 ### Build from source instead
 

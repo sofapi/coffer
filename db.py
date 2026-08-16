@@ -1,9 +1,17 @@
 """SQLite database initialization and helpers."""
 
-import sqlite3
 import os
+import sqlite3
 
 DB_PATH = os.getenv("DB_PATH", "data/coffer.db")
+
+# Settings introduced after the initial release. Backfilled into existing
+# databases on every boot (see init_db) so upgrading needs no migration step.
+LATER_SETTING_DEFAULTS = {
+    # Chosen appearance. Value is a Palette id from theme.py; an unrecognised
+    # value degrades to the default palette rather than breaking the UI.
+    "theme_palette": "coffer-classic",
+}
 
 
 def get_db():
@@ -104,6 +112,16 @@ def init_db():
             conn.execute(
                 "INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", (k, v)
             )
+
+    # Settings added after the first release are backfilled unconditionally —
+    # the block above only runs on a brand new database, so an existing install
+    # would otherwise never see them. INSERT OR IGNORE never overwrites a value
+    # the user has already chosen, which makes this safe to re-run on boot.
+    for key, value in LATER_SETTING_DEFAULTS.items():
+        conn.execute(
+            "INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", (key, value)
+        )
+
     conn.commit()
     conn.close()
 

@@ -25,19 +25,19 @@
 <div class="cards">
     <div class="card card-green">
         <div class="card-label">Income</div>
-        <div class="card-value">&pound;{{ "%.2f"|format(income_total) }}</div>
+        <div class="card-value">{{ income_total|money }}</div>
     </div>
     <div class="card card-red">
         <div class="card-label">Expenses</div>
-        <div class="card-value">&pound;{{ "%.2f"|format(expenses_total) }}</div>
+        <div class="card-value">{{ expenses_total|money }}</div>
     </div>
     <div class="card card-blue">
         <div class="card-label">Profit</div>
-        <div class="card-value">&pound;{{ "%.2f"|format(profit) }}</div>
+        <div class="card-value">{{ profit|money }}</div>
     </div>
     <div class="card card-orange">
         <div class="card-label">Unpaid Invoices</div>
-        <div class="card-value">{{ unpaid_count }} (&pound;{{ "%.2f"|format(unpaid_total) }})</div>
+        <div class="card-value">{{ unpaid_count }} ({{ unpaid_total|money }})</div>
     </div>
 </div>
 {% endblock %}

@@ -21,6 +21,7 @@
     <button type="submit" class="btn">Create Invoice</button>
 </form>
 
+{% if invoices %}
 <table>
     <thead><tr><th>Invoice #</th><th>Customer</th><th>Date</th><th>Status</th><th class="num">Total</th><th></th></tr></thead>
     <tbody>
@@ -29,8 +30,8 @@
         <td><a href="/invoices/{{ inv.id }}">{{ inv.invoice_number }}</a></td>
         <td>{{ inv.customer_name }}</td>
         <td>{{ inv.date }}</td>
-        <td><span class="badge badge-{{ inv.status }}">{{ inv.status }}</span></td>
-        <td class="num">&pound;{{ "%.2f"|format(inv.total) }}</td>
+        <td>{% set s = invoice_status(inv) %}<span class="badge badge-{{ s }}">{{ s }}</span></td>
+        <td class="num">{{ inv.total|money }}</td>
         <td>
             <a href="/invoices/{{ inv.id }}/pdf" class="btn btn-sm" target="_blank">PDF</a>
             <form method="POST" action="/invoices/{{ inv.id }}/delete" class="inline" data-confirm="Permanently delete invoice {{ inv.invoice_number }} for {{ inv.customer_name }} (£{{ '%.2f'|format(inv.total) }})?&#10;&#10;This cannot be undone."><button class="btn btn-sm btn-danger">X</button></form>
@@ -39,4 +40,10 @@
     {% endfor %}
     </tbody>
 </table>
+{% else %}
+<div class="empty">
+    <span class="empty-title">No invoices yet</span>
+    <p>Create your first invoice with the form above. You'll need a customer first.</p>
+</div>
+{% endif %}
 {% endblock %}

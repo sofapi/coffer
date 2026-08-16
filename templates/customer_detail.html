@@ -24,8 +24,8 @@
     <tr>
         <td><a href="/invoices/{{ inv.id }}">{{ inv.invoice_number }}</a></td>
         <td>{{ inv.date }}</td>
-        <td><span class="badge badge-{{ inv.status }}">{{ inv.status }}</span></td>
-        <td class="num">&pound;{{ "%.2f"|format(inv.total) }}</td>
+        <td>{% set s = invoice_status(inv) %}<span class="badge badge-{{ s }}">{{ s }}</span></td>
+        <td class="num">{{ inv.total|money }}</td>
     </tr>
     {% endfor %}
     </tbody>

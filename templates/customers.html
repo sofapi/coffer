@@ -17,6 +17,7 @@
     <button type="submit" class="btn">Add Customer</button>
 </form>
 
+{% if customers %}
 <table>
     <thead><tr><th>Name</th><th>Email</th><th>Phone</th><th></th></tr></thead>
     <tbody>
@@ -30,4 +31,10 @@
     {% endfor %}
     </tbody>
 </table>
+{% else %}
+<div class="empty">
+    <span class="empty-title">No customers yet</span>
+    <p>Add the people and businesses you bill. You need at least one before creating an invoice.</p>
+</div>
+{% endif %}
 {% endblock %}

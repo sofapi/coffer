@@ -1,6 +1,7 @@
 """Lightweight PDF invoice generation using fpdf2."""
 
 import os
+
 from fpdf import FPDF
 
 

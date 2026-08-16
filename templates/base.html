@@ -1,15 +1,21 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-palette="{{ palette.id }}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ app_name }}{% block title_extra %}{% endblock %}</title>
+    {# The chosen palette's tokens are inlined ahead of the stylesheet so the
+       saved appearance paints on the first frame — there is no default theme
+       to flash, because the default is never sent. #}
+    <style>{{ palette_style }}</style>
+    <meta name="color-scheme" content="{{ 'dark' if palette.mode == 'dark' else 'light' }}">
     <link rel="stylesheet" href="/static/style.css">
+    {% block head_extra %}{% endblock %}
 </head>
 <body>
     <nav>
         <div class="nav-brand">{{ business_name }}</div>
-        <button class="nav-toggle" onclick="document.querySelector('.nav-links').classList.toggle('open')" aria-label="Menu">&#9776;</button>
+        <button class="nav-toggle" onclick="document.querySelector('.nav-links').classList.toggle('open')" aria-label="Menu" aria-expanded="false">&#9776;</button>
         <div class="nav-links">
             <a href="/" class="{% if request.path == '/' %}active{% endif %}">Dashboard</a>
             <a href="/expenses" class="{% if '/expenses' in request.path %}active{% endif %}">Expenses</a>
@@ -18,6 +24,7 @@
             <a href="/customers" class="{% if '/customers' in request.path %}active{% endif %}">Customers</a>
             <a href="/reports" class="{% if '/reports' in request.path %}active{% endif %}">Reports</a>
             <a href="/export" class="{% if '/export' in request.path %}active{% endif %}">Export</a>
+            <a href="/appearance" class="{% if '/appearance' in request.path %}active{% endif %}">Appearance</a>
             <a href="/invoice-settings" class="{% if '/invoice-settings' in request.path %}active{% endif %}">Invoice Settings</a>
             <a href="/webhooks" class="{% if '/webhooks' in request.path %}active{% endif %}">Webhooks</a>
             <a href="/backup" class="{% if '/backup' in request.path %}active{% endif %}">Backup</a>
@@ -27,5 +34,6 @@
         {% block content %}{% endblock %}
     </main>
     <script src="/static/app.js"></script>
+    {% block scripts %}{% endblock %}
 </body>
 </html>

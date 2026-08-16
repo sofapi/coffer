@@ -1,0 +1,121 @@
+{% extends "base.html" %}
+{% block title_extra %} — Appearance{% endblock %}
+
+{% block head_extra %}
+{# Every palette, so selecting one repaints instantly with no round trip. Only
+   this page pays for it; everywhere else inlines just the saved palette. #}
+<link rel="stylesheet" href="/palettes.css">
+{% endblock %}
+
+{% block content %}
+<h1>Appearance</h1>
+<p class="hint" style="margin-bottom:1.25rem;max-width:62ch;">
+    Pick a colour palette. Selecting one previews it across the whole app
+    immediately — nothing is saved until you press <strong>Save appearance</strong>.
+</p>
+
+{% if saved == '1' %}
+<div class="alert alert-success" role="status">
+    <span class="alert-icon" aria-hidden="true">&check;</span>
+    <div><strong>Appearance saved.</strong> It applies everywhere in Coffer.</div>
+</div>
+{% elif saved == 'invalid' %}
+<div class="alert alert-danger" role="alert">
+    <span class="alert-icon" aria-hidden="true">!</span>
+    <div><strong>That palette is not available.</strong> Nothing was changed.</div>
+</div>
+{% endif %}
+
+<form method="POST" action="/appearance/save" id="appearance-form" data-saved-palette="{{ current }}">
+    <fieldset style="border:0;">
+        <legend class="visually-hidden">Colour palette</legend>
+        <div class="palette-grid">
+            {% for p in palettes %}
+            <div class="palette-option">
+                <input type="radio" name="palette" id="palette-{{ p.id }}" value="{{ p.id }}"
+                       {% if p.id == current %}checked{% endif %}>
+                <label class="palette-card" for="palette-{{ p.id }}">
+                    {# A miniature of the palette: page ground, brand bar, a card
+                       and the four chart series — the same colours it will use. #}
+                    <span class="swatch" style="background:{{ p.resolved()['bg'] }};">
+                        <span class="swatch-bar" style="background:{{ p.resolved()['brand'] }};"></span>
+                        <span class="swatch-body" style="background:{{ p.resolved()['surface'] }};border:1px solid {{ p.resolved()['border'] }};">
+                            <span class="swatch-series" style="background:{{ p.resolved()['chart-revenue'] }};height:76%"></span>
+                            <span class="swatch-series" style="background:{{ p.resolved()['chart-cost'] }};height:44%"></span>
+                            <span class="swatch-series" style="background:{{ p.resolved()['chart-net'] }};height:62%"></span>
+                            <span class="swatch-series" style="background:{{ p.resolved()['chart-invoiced'] }};height:30%"></span>
+                        </span>
+                    </span>
+                    <span class="palette-meta">
+                        <span class="palette-name">
+                            {{ p.name }}
+                            {% if p.id == current %}<span class="palette-tag" data-current-tag>Current</span>{% endif %}
+                        </span>
+                        <span class="palette-desc">{{ p.description }}</span>
+                    </span>
+                </label>
+            </div>
+            {% endfor %}
+        </div>
+    </fieldset>
+
+    <h2>Live preview</h2>
+    <p class="hint" style="margin-bottom:0.75rem;">Components as they will look with the selected palette.</p>
+
+    <div class="panel">
+        <div class="preview-strip" style="margin-bottom:1rem;">
+            <div class="metrics" style="margin-bottom:0;">
+                <div class="metric">
+                    <div class="metric-label">Revenue</div>
+                    <div class="metric-value">{{ currency_symbol }}12,480</div>
+                    <div class="metric-foot"><span class="trend trend-up"><span class="trend-arrow" aria-hidden="true">&#9650;</span>8.2%</span> vs prev</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-label">Costs</div>
+                    <div class="metric-value">{{ currency_symbol }}4,105</div>
+                    <div class="metric-foot"><span class="trend trend-down"><span class="trend-arrow" aria-hidden="true">&#9660;</span>3.1%</span> vs prev</div>
+                </div>
+            </div>
+            <table style="margin-bottom:0;">
+                <thead><tr><th>Invoice</th><th>Status</th><th class="num">Total</th></tr></thead>
+                <tbody>
+                    <tr><td>INV-0042</td><td><span class="badge badge-paid">paid</span></td><td class="num">{{ currency_symbol }}960.00</td></tr>
+                    <tr><td>INV-0043</td><td><span class="badge badge-unpaid">unpaid</span></td><td class="num">{{ currency_symbol }}450.00</td></tr>
+                    <tr><td>INV-0044</td><td><span class="badge badge-overdue">overdue</span></td><td class="num">{{ currency_symbol }}1,275.00</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="alert alert-info">
+            <span class="alert-icon" aria-hidden="true">i</span>
+            <div>Informational message — the tone used for context and explanations.</div>
+        </div>
+        <div class="alert alert-warning">
+            <span class="alert-icon" aria-hidden="true">!</span>
+            <div>Warning — something needs attention but nothing has failed.</div>
+        </div>
+
+        <div class="form-row" style="margin-bottom:1rem;">
+            <input type="text" placeholder="Text input — focus me to see the focus ring" style="max-width:340px;">
+            <select aria-label="Example select"><option>Example select</option></select>
+        </div>
+
+        <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
+            <span class="btn">Primary</span>
+            <span class="btn btn-quiet">Secondary</span>
+            <span class="btn btn-green">Mark paid</span>
+            <span class="btn btn-danger">Delete</span>
+        </div>
+    </div>
+
+    <div class="sticky-actions">
+        <button type="submit" class="btn">Save appearance</button>
+        <a href="/appearance" class="btn btn-quiet" id="reset-preview">Reset preview</a>
+        <span class="hint" id="preview-status" role="status" aria-live="polite"></span>
+    </div>
+</form>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/appearance.js"></script>
+{% endblock %}

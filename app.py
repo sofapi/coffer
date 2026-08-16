@@ -2,20 +2,35 @@
 
 import csv
 import io
-import json
 import os
 import sqlite3
 import tempfile
 import threading
-from datetime import datetime, date
+from datetime import date, datetime
 
 import requests as http_requests
 from flask import (
-    Flask, request, jsonify, render_template, redirect, url_for, Response, send_file,
+    Flask,
+    Response,
+    jsonify,
+    redirect,
+    render_template,
+    request,
+    send_file,
+    url_for,
 )
 
-from db import get_db, init_db, next_invoice_number, get_settings, save_setting
+import finance
+from db import get_db, get_settings, init_db, next_invoice_number, save_setting
 from pdf_gen import generate_invoice_pdf
+from theme import (
+    PALETTE_SETTING_KEY,
+    PALETTES,
+    build_palettes_css,
+    get_palette,
+    is_valid_palette,
+    palette_style_block,
+)
 
 app = Flask(__name__)
 init_db()
@@ -25,20 +40,119 @@ APP_NAME = "Coffer"
 
 @app.context_processor
 def inject_branding():
-    """Make the product name and configured business name available to every
-    template, so branding is driven by settings rather than hardcoded."""
+    """Make branding and the chosen appearance available to every template.
+
+    The palette's tokens are inlined into <head> by base.html from
+    `palette_style_block`, which is what keeps the saved appearance from
+    flashing the default one: the colours are in the first bytes of the
+    document, before any stylesheet request has been made.
+    """
     conn = get_db()
     try:
-        business_name = get_settings(conn).get("business_name", "") or APP_NAME
+        settings = get_settings(conn)
     finally:
         conn.close()
-    return {"app_name": APP_NAME, "business_name": business_name}
+    palette = get_palette(settings.get(PALETTE_SETTING_KEY, ""))
+    return {
+        "app_name": APP_NAME,
+        "business_name": settings.get("business_name", "") or APP_NAME,
+        "palette": palette,
+        "palette_style": palette_style_block(palette),
+        "currency_symbol": finance.CURRENCY_SYMBOL,
+    }
+
+
+def _money(value, decimals):
+    """Format a currency amount, keeping the minus sign outside the symbol.
+
+    Naive formatting produces "£-34", which reads as a typo; accounting
+    convention puts the sign first.
+    """
+    if value is None:
+        return "—"
+    sign = "-" if value < 0 else ""
+    return f"{sign}{finance.CURRENCY_SYMBOL}{abs(value):,.{decimals}f}"
+
+
+@app.template_filter("money")
+def money_filter(value):
+    """Currency with pence, for ledger rows and totals."""
+    return _money(value, 2)
+
+
+@app.template_filter("money0")
+def money0_filter(value):
+    """Currency rounded to whole units, for summary tiles.
+
+    Headline figures read better without pence, and rounding here never feeds
+    back into a calculation — the arithmetic is all done in finance.py.
+    """
+    return _money(value, 0)
+
+
+@app.template_global("invoice_status")
+def invoice_display_status(invoice, today=None):
+    """Display status for an invoice: paid, overdue, or unpaid.
+
+    'overdue' is not a stored state — it is an unpaid invoice whose due date has
+    passed. Deriving it in one place keeps every page agreeing about it.
+    """
+    status = (invoice["status"] or "unpaid").lower()
+    if status != "unpaid":
+        return status
+    due = invoice["due_date"] if "due_date" in invoice.keys() else ""
+    if due and due < (today or date.today().isoformat()):
+        return "overdue"
+    return "unpaid"
 
 
 @app.route("/health")
 def health():
     """Lightweight liveness probe for the container healthcheck."""
     return {"status": "ok", "app": APP_NAME}, 200
+
+
+# ---------------------------------------------------------------------------
+# Appearance
+# ---------------------------------------------------------------------------
+
+@app.route("/appearance")
+def appearance():
+    conn = get_db()
+    current = get_settings(conn).get(PALETTE_SETTING_KEY, "")
+    conn.close()
+    return render_template(
+        "appearance.html",
+        palettes=PALETTES,
+        current=get_palette(current).id,
+        saved=request.args.get("saved"),
+    )
+
+
+@app.route("/appearance/save", methods=["POST"])
+def appearance_save():
+    choice = request.form.get("palette", "")
+    if not is_valid_palette(choice):
+        return redirect(url_for("appearance", saved="invalid"))
+    conn = get_db()
+    save_setting(conn, PALETTE_SETTING_KEY, choice)
+    conn.close()
+    return redirect(url_for("appearance", saved="1"))
+
+
+@app.route("/palettes.css")
+def palettes_css():
+    """Every palette as CSS, loaded only by the appearance page.
+
+    Generated from theme.py so the palette list has exactly one definition.
+    Other pages inline just the chosen palette instead, which is smaller and
+    cannot flash.
+    """
+    return Response(
+        build_palettes_css(),
+        mimetype="text/css",
+        headers={"Cache-Control": "no-cache"},
+    )
 
 # ---------------------------------------------------------------------------
 # Webhook helper
@@ -112,11 +226,13 @@ def reports():
            WHERE i.status='paid' AND i.date >= ? AND i.date < ?""",
         (period_start, period_end)
     ).fetchone()["t"]
-    # Unpaid invoices in the period
+    # Unpaid invoices in the period. Counted from a per-invoice aggregate: a
+    # plain JOIN onto invoice_lines would count line items, not invoices.
     unpaid = conn.execute(
-        """SELECT COUNT(*) as c, COALESCE(SUM(il.amount),0) as t FROM invoice_lines il
-           JOIN invoices i ON il.invoice_id=i.id
-           WHERE i.status='unpaid' AND i.date >= ? AND i.date < ?""",
+        f"""SELECT COUNT(*) as c, COALESCE(SUM(COALESCE(t.total,0)),0) as t
+            FROM invoices i
+            LEFT JOIN {finance.INVOICE_TOTALS} t ON t.invoice_id = i.id
+            WHERE i.status='unpaid' AND i.date >= ? AND i.date < ?""",
         (period_start, period_end)
     ).fetchone()
 
@@ -156,61 +272,62 @@ def reports():
         months=months, ty_options=ty_options)
 
 
+def _dashboard_args():
+    """Read the period controls off the query string."""
+    return (
+        request.args.get("period", "12m"),
+        request.args.get("from", ""),
+        request.args.get("to", ""),
+    )
+
+
 @app.route("/")
 def dashboard():
+    period, custom_from, custom_to = _dashboard_args()
     conn = get_db()
-    today = date.today()
-    month_start = today.strftime("%Y-%m-01")
-    if today.month == 12:
-        next_month_start = f"{today.year + 1}-01-01"
-    else:
-        next_month_start = f"{today.year}-{today.month + 1:02d}-01"
-    month = today.strftime("%Y-%m")
+    try:
+        data = finance.build_dashboard(conn, period, custom_from, custom_to)
+        recent_invoices = conn.execute(
+            f"""SELECT i.*, c.name as customer_name, COALESCE(t.total, 0) as total
+                FROM invoices i
+                JOIN customers c ON i.customer_id = c.id
+                LEFT JOIN {finance.INVOICE_TOTALS} t ON t.invoice_id = i.id
+                ORDER BY i.date DESC, i.id DESC LIMIT 6"""
+        ).fetchall()
+        recent_expenses = conn.execute(
+            "SELECT * FROM expenses ORDER BY date DESC, id DESC LIMIT 5"
+        ).fetchall()
+        recent_income = conn.execute(
+            "SELECT * FROM income ORDER BY date DESC, id DESC LIMIT 5"
+        ).fetchall()
+    finally:
+        conn.close()
 
-    expenses_total = conn.execute(
-        "SELECT COALESCE(SUM(amount),0) as t FROM expenses WHERE date >= ? AND date < ?",
-        (month_start, next_month_start)
-    ).fetchone()["t"]
-    income_total = conn.execute(
-        "SELECT COALESCE(SUM(amount),0) as t FROM income WHERE date >= ? AND date < ?",
-        (month_start, next_month_start)
-    ).fetchone()["t"]
-    invoice_income = conn.execute(
-        """SELECT COALESCE(SUM(il.amount),0) as t FROM invoice_lines il
-           JOIN invoices i ON il.invoice_id=i.id
-           WHERE i.status='paid' AND i.date >= ? AND i.date < ?""",
-        (month_start, next_month_start)
-    ).fetchone()["t"]
-    income_total += invoice_income
-    unpaid = conn.execute(
-        """SELECT COUNT(*) as c, COALESCE(SUM(il.amount),0) as t
-           FROM invoices i LEFT JOIN invoice_lines il ON il.invoice_id = i.id
-           WHERE i.status = 'unpaid'"""
-    ).fetchone()
-    invoices_unpaid = unpaid["c"]
-    invoices_total = unpaid["t"]
+    return render_template(
+        "dashboard.html",
+        data=data,
+        periods=finance.PERIODS,
+        custom_from=custom_from,
+        custom_to=custom_to,
+        today=date.today().isoformat(),
+        recent_expenses=recent_expenses,
+        recent_income=recent_income,
+        recent_invoices=recent_invoices,
+    )
 
-    recent_expenses = conn.execute(
-        "SELECT * FROM expenses ORDER BY date DESC LIMIT 5"
-    ).fetchall()
-    recent_income = conn.execute(
-        "SELECT * FROM income ORDER BY date DESC LIMIT 5"
-    ).fetchall()
-    recent_invoices = conn.execute(
-        """SELECT i.*, c.name as customer_name, COALESCE(SUM(il.amount),0) as total
-           FROM invoices i
-           JOIN customers c ON i.customer_id=c.id
-           LEFT JOIN invoice_lines il ON il.invoice_id=i.id
-           GROUP BY i.id
-           ORDER BY i.date DESC LIMIT 5"""
-    ).fetchall()
 
-    conn.close()
-    return render_template("dashboard.html",
-        month=month, expenses_total=expenses_total, income_total=income_total,
-        invoices_unpaid=invoices_unpaid, invoices_total=invoices_total,
-        recent_expenses=recent_expenses, recent_income=recent_income,
-        recent_invoices=recent_invoices)
+@app.route("/api/dashboard/performance")
+def api_dashboard_performance():
+    """Monthly performance series + summary metrics for the dashboard chart.
+
+    Definitions live in finance.py; this route only chooses the window.
+    """
+    period, custom_from, custom_to = _dashboard_args()
+    conn = get_db()
+    try:
+        return jsonify(finance.build_dashboard(conn, period, custom_from, custom_to))
+    finally:
+        conn.close()
 
 
 # --- Expenses ---
@@ -378,7 +495,7 @@ def invoice_detail(id):
     invoice = conn.execute("SELECT * FROM invoices WHERE id=?", (id,)).fetchone()
     customer = conn.execute("SELECT * FROM customers WHERE id=?", (invoice["customer_id"],)).fetchone()
     lines = conn.execute("SELECT * FROM invoice_lines WHERE invoice_id=? ORDER BY id", (id,)).fetchall()
-    total = sum(l["amount"] for l in lines)
+    total = sum(line["amount"] for line in lines)
     conn.close()
     return render_template("invoice_detail.html", invoice=invoice, customer=customer, lines=lines, total=total)
 
@@ -775,7 +892,7 @@ def api_invoice_detail(id):
     invoice["lines"] = [dict(r) for r in conn.execute(
         "SELECT * FROM invoice_lines WHERE invoice_id=? ORDER BY id", (id,)
     ).fetchall()]
-    invoice["total"] = sum(l["amount"] for l in invoice["lines"])
+    invoice["total"] = sum(line["amount"] for line in invoice["lines"])
     conn.close()
     return jsonify(invoice)
 

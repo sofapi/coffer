@@ -5,8 +5,8 @@
 <p>Your entire Coffer database — customers, invoices, income and expenses — in a
    single file. Download one regularly and keep it somewhere safe.</p>
 
-{% if message %}<div class="card card-green">{{ message }}</div>{% endif %}
-{% if error %}<div class="card card-red">{{ error }}</div>{% endif %}
+{% if message %}<div class="alert alert-success" role="status"><span class="alert-icon" aria-hidden="true">&check;</span><div>{{ message }}</div></div>{% endif %}
+{% if error %}<div class="alert alert-danger" role="alert"><span class="alert-icon" aria-hidden="true">!</span><div>{{ error }}</div></div>{% endif %}
 
 <form class="form-card">
     <h2>Download backup</h2>

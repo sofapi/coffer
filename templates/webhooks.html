@@ -12,6 +12,7 @@
     <button type="submit" class="btn">Add Webhook</button>
 </form>
 
+{% if webhooks %}
 <table>
     <thead><tr><th>URL</th><th>Event</th><th>Status</th><th></th></tr></thead>
     <tbody>
@@ -25,4 +26,10 @@
     {% endfor %}
     </tbody>
 </table>
+{% else %}
+<div class="empty">
+    <span class="empty-title">No webhooks configured</span>
+    <p>Add a URL above to be notified when an invoice is created.</p>
+</div>
+{% endif %}
 {% endblock %}
