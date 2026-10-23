@@ -13,23 +13,55 @@
     {% block head_extra %}{% endblock %}
 </head>
 <body>
-    <nav>
+    {# Navigation. Top-level links and two disclosure groups (Money, Settings).
+       Desktop: each group is a button that opens a small panel (static/app.js).
+       Narrow screens: the hamburger opens one list, and the groups are shown
+       expanded under their labels (static/style.css, "mobile"). A link is
+       active when the current path starts with its href — the same rule the
+       flat navigation used — and a group is active when one of its links is. #}
+    {% set nav_items = [
+        {"href": "/", "label": "Dashboard"},
+        {"label": "Money", "id": "money", "children": [
+            {"href": "/income", "label": "Income"},
+            {"href": "/expenses", "label": "Expenses"},
+            {"href": "/pensions", "label": "Pensions"},
+        ]},
+        {"href": "/invoices", "label": "Invoices"},
+        {"href": "/customers", "label": "Customers"},
+        {"href": "/reports", "label": "Reports"},
+        {"href": "/export", "label": "Export"},
+        {"label": "Settings", "id": "settings", "children": [
+            {"href": "/appearance", "label": "Appearance"},
+            {"href": "/invoice-settings", "label": "Invoice Settings"},
+            {"href": "/webhooks", "label": "Webhooks"},
+            {"href": "/backup", "label": "Backup"},
+        ]},
+    ] %}
+    {% macro is_active(href) %}{{ 'y' if (request.path == '/' if href == '/' else request.path.startswith(href)) else '' }}{% endmacro %}
+    {% macro nav_link(item) %}{% set on = is_active(item.href) %}<a href="{{ item.href }}"{% if on %} class="active" aria-current="page"{% endif %}>{{ item.label }}</a>{% endmacro %}
+    <nav aria-label="Main">
         <div class="nav-brand">{{ business_name }}</div>
-        <button class="nav-toggle" onclick="document.querySelector('.nav-links').classList.toggle('open')" aria-label="Menu" aria-expanded="false">&#9776;</button>
-        <div class="nav-links">
-            <a href="/" class="{% if request.path == '/' %}active{% endif %}">Dashboard</a>
-            <a href="/expenses" class="{% if '/expenses' in request.path %}active{% endif %}">Expenses</a>
-            <a href="/income" class="{% if '/income' in request.path %}active{% endif %}">Income</a>
-            <a href="/invoices" class="{% if '/invoices' in request.path %}active{% endif %}">Invoices</a>
-            <a href="/customers" class="{% if '/customers' in request.path %}active{% endif %}">Customers</a>
-            <a href="/pensions" class="{% if '/pensions' in request.path %}active{% endif %}">Pensions</a>
-            <a href="/reports" class="{% if '/reports' in request.path %}active{% endif %}">Reports</a>
-            <a href="/export" class="{% if '/export' in request.path %}active{% endif %}">Export</a>
-            <a href="/appearance" class="{% if '/appearance' in request.path %}active{% endif %}">Appearance</a>
-            <a href="/invoice-settings" class="{% if '/invoice-settings' in request.path %}active{% endif %}">Invoice Settings</a>
-            <a href="/webhooks" class="{% if '/webhooks' in request.path %}active{% endif %}">Webhooks</a>
-            <a href="/backup" class="{% if '/backup' in request.path %}active{% endif %}">Backup</a>
-        </div>
+        <button type="button" class="nav-toggle" aria-label="Menu" aria-expanded="false" aria-controls="nav-links">&#9776;</button>
+        <ul class="nav-links" id="nav-links">
+        {%- for item in nav_items %}
+            {%- if item.children %}
+            {%- set ns = namespace(on=false) %}
+            {%- for child in item.children %}{% if is_active(child.href) %}{% set ns.on = true %}{% endif %}{% endfor %}
+            <li class="nav-group" data-nav-group>
+                <button type="button" class="nav-group-toggle{% if ns.on %} active{% endif %}" id="nav-{{ item.id }}-button"
+                        aria-expanded="false" aria-controls="nav-{{ item.id }}-menu">{{ item.label }}<svg class="nav-chevron" viewBox="0 0 10 6" width="10" height="6" aria-hidden="true" focusable="false"><path d="M1 1l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+                <span class="nav-group-label" aria-hidden="true">{{ item.label }}</span>
+                <ul class="nav-menu" id="nav-{{ item.id }}-menu" aria-labelledby="nav-{{ item.id }}-button">
+                {%- for child in item.children %}
+                    <li>{{ nav_link(child) }}</li>
+                {%- endfor %}
+                </ul>
+            </li>
+            {%- else %}
+            <li>{{ nav_link(item) }}</li>
+            {%- endif %}
+        {%- endfor %}
+        </ul>
     </nav>
     <main>
         {% block content %}{% endblock %}
