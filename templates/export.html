@@ -4,6 +4,8 @@
 <h1>Export to CSV</h1>
 <p>Download all incoming or outgoing records as CSV files. Optionally filter by date range (useful for tax returns).</p>
 
+{% if error %}<div class="alert alert-danger" role="alert"><span class="alert-icon" aria-hidden="true">!</span><div>{{ error }}</div></div>{% endif %}
+
 <form class="card" onsubmit="return false;">
     <h2>Date Range (optional)</h2>
     <div class="inline-form">
@@ -29,7 +31,7 @@
     <p class="hint" style="margin-bottom:0.5rem;">Income, expenses, profit and pension totals for one
        UK tax year (6 April – 5 April), with the pension schedule. Useful for Self Assessment.</p>
     <div class="inline-form">
-        <label>Tax year starting April <input type="number" name="ty" min="2000" max="2100" value="{{ current_ty }}" required style="max-width:7rem"></label>
+        <label>Tax year starting April <input type="number" name="ty" min="{{ min_ty }}" max="{{ current_ty + 1 }}" value="{{ current_ty }}" required style="max-width:7rem"></label>
         <button type="submit" class="btn">Download Tax Year CSV</button>
     </div>
 </form>

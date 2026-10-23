@@ -120,10 +120,20 @@ data/
 This directory is **git-ignored** and is the **only** thing you need to back up.
 Everything else (code, image) is reproducible from Git/GHCR.
 
-> Using a host path elsewhere? Copy `docker-compose.override.example.yml` →
-> `docker-compose.override.yml` and point the `data` mount at it. The override
-> file is git-ignored, so your host path never gets committed. (If you don't
-> need it, ignore this — the default `./data` works out of the box.)
+> Using a host path elsewhere? Create a `docker-compose.override.yml` next to
+> `docker-compose.yml` — Compose loads it automatically — and point the `data`
+> mount at your path (it replaces the `./data` mount because the container path
+> matches):
+>
+> ```yaml
+> services:
+>   coffer:
+>     volumes:
+>       - /your/host/path/coffer-data:/app/data
+> ```
+>
+> The override file is git-ignored, so your host path never gets committed. (If
+> you don't need it, ignore this — the default `./data` works out of the box.)
 
 ## 6. Backups & restore
 

@@ -215,10 +215,22 @@ def reports():
     # UK tax year: 6 April to 5 April (rule lives in finance.tax_year_of)
     current_ty = finance.tax_year_of(date.today())
 
-    selected_ty = request.args.get("ty", str(current_ty))
+    ty_arg = request.args.get("ty", "").strip()
     selected_month = request.args.get("month", "")  # e.g. "2025-04" or "" for full year
-    ty = int(selected_ty)
+    ty = finance.parse_tax_year(ty_arg) if ty_arg else current_ty
+    if ty is None:
+        return redirect(url_for("reports", error=f"'{ty_arg}' is not a valid tax year."))
+    selected_ty = str(ty)
     ty_start, ty_end = finance.tax_year_bounds(ty)
+
+    # Build month options for the tax year (Apr, May, ... Mar)
+    months = []
+    for i in range(12):
+        m = ((4 + i - 1) % 12) + 1  # 4,5,6,...12,1,2,3
+        y = ty if m >= 4 else ty + 1
+        months.append({"value": f"{y}-{m:02d}", "label": date(y, m, 1).strftime("%b %Y")})
+    if selected_month and selected_month not in {m["value"] for m in months}:
+        return redirect(url_for("reports", ty=ty, error="That month is not in the selected tax year."))
 
     if selected_month:
         parts = selected_month.split("-")
@@ -248,13 +260,6 @@ def reports():
         (period_start, period_end)
     ).fetchone()
 
-    # Build month options for the tax year (Apr, May, ... Mar)
-    months = []
-    for i in range(12):
-        m = ((4 + i - 1) % 12) + 1  # 4,5,6,...12,1,2,3
-        y = ty if m >= 4 else ty + 1
-        months.append({"value": f"{y}-{m:02d}", "label": date(y, m, 1).strftime("%b %Y")})
-
     # Tax year options: from earliest data year to current
     earliest = conn.execute(
         """SELECT MIN(d) as d FROM (
@@ -280,7 +285,7 @@ def reports():
         profit=figures["profit"],
         unpaid_count=unpaid["c"], unpaid_total=unpaid["t"],
         pension_totals=figures["pensions"], tax_year_label=finance.tax_year_label(ty),
-        months=months, ty_options=ty_options)
+        months=months, ty_options=ty_options, error=request.args.get("error"))
 
 
 def _dashboard_args():
@@ -418,14 +423,18 @@ def _pension_year_options(conn, current_ty):
 @app.route("/pensions")
 def pensions_list():
     current_ty = finance.tax_year_of(date.today())
-    selected_ty = request.args.get("ty", str(current_ty))  # "" = all years
+    selected_ty = request.args.get("ty", str(current_ty)).strip()  # "" = all years
+    ty = finance.parse_tax_year(selected_ty)
+    if selected_ty and ty is None:
+        return redirect(url_for("pensions_list",
+                                error=f"'{selected_ty}' is not a valid tax year."))
     conn = get_db()
     try:
-        if selected_ty.isdigit():
-            start, end = finance.tax_year_bounds(int(selected_ty))
-            label = f"Tax year {finance.tax_year_label(int(selected_ty))}"
+        if ty is not None:
+            start, end = finance.tax_year_bounds(ty)
+            label = f"Tax year {finance.tax_year_label(ty)}"
         else:
-            selected_ty, start, end, label = "", "", "", "All tax years"
+            start, end, label = "", "", "All tax years"
         items = pensions.list_contributions(conn, start, end)
         year_options = _pension_year_options(conn, current_ty)
         rate = pensions.configured_rate(get_settings(conn))
@@ -796,7 +805,8 @@ def invoice_settings_preview():
 
 @app.route("/export")
 def export_page():
-    return render_template("export.html", current_ty=finance.tax_year_of(date.today()))
+    return render_template("export.html", current_ty=finance.tax_year_of(date.today()),
+                           min_ty=finance.MIN_TAX_YEAR, error=request.args.get("error"))
 
 
 @app.route("/export/incoming.csv")
@@ -948,8 +958,10 @@ def _write_pension_schedule(writer, items):
 def export_tax_year_csv():
     """One tax year's summary for the Self Assessment return, followed by the
     pension schedule behind the pension figures."""
-    ty_arg = request.args.get("ty", "")
-    ty = int(ty_arg) if ty_arg.isdigit() else finance.tax_year_of(date.today())
+    ty_arg = request.args.get("ty", "").strip()
+    ty = finance.parse_tax_year(ty_arg) if ty_arg else finance.tax_year_of(date.today())
+    if ty is None:
+        return redirect(url_for("export_page", error=f"'{ty_arg}' is not a valid tax year."))
     start, end = finance.tax_year_bounds(ty)
     conn = get_db()
     figures = _report_figures(conn, start, end)

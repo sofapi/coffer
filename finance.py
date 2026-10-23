@@ -204,6 +204,22 @@ def tax_year_bounds(ty: int) -> tuple[str, str]:
     return f"{ty}-04-06", f"{ty + 1}-04-06"
 
 
+# Earliest tax year Coffer accepts from a URL or form. Anything outside
+# [MIN_TAX_YEAR, current + 1] is a typo or a hand-edited URL, not a real year.
+MIN_TAX_YEAR = 2000
+
+
+def parse_tax_year(value, today: date | None = None) -> int | None:
+    """A tax year from user input ('2026'), or None if it is not a plain
+    number in the accepted range. Callers decide what None means for them."""
+    text = (value or "").strip()
+    if not text.isdigit() or len(text) != 4:
+        return None
+    ty = int(text)
+    latest = tax_year_of(today or date.today()) + 1
+    return ty if MIN_TAX_YEAR <= ty <= latest else None
+
+
 def tax_year_label(ty: int) -> str:
     """2026 -> '2026/2027', matching the Reports page's tax-year picker."""
     return f"{ty}/{ty + 1}"

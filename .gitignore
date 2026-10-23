@@ -57,6 +57,5 @@ venv/
 .pytest_cache/
 .ruff_cache/
 
-# --- Local compose override (your real host paths) — example is tracked ----
+# --- Local compose override (your real host paths) — see SETUP.md § 5 -----
 docker-compose.override.yml
-tests/
