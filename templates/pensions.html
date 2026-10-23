@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% block title_extra %} — Pensions{% endblock %}
+{% block content %}
+<h1>Pension Contributions <span class="subtitle">{{ period_label }}</span></h1>
+<p class="hint">Personal pension payments, kept separate from expenses — they never
+   reduce business profit. Enter the amount that actually left your bank account;
+   for relief-at-source schemes Coffer works out the basic-rate relief
+   ({{ relief_rate_pct }}%) your provider claims from HMRC and adds to your pension.
+   That relief goes into the pension pot — it is not refunded to you.</p>
+
+{% if error %}<div class="alert alert-danger" role="alert"><span class="alert-icon" aria-hidden="true">!</span><div>{{ error }}</div></div>{% endif %}
+
+<form method="POST" action="/pensions/add" class="form-card" data-pension-form data-relief-rate="{{ relief_rate }}">
+    <div class="form-row">
+        <input type="date" name="date" required aria-label="Payment date">
+        <input type="number" name="amount_paid" step="0.01" min="0.01" placeholder="Amount paid" required aria-label="Amount paid">
+        <input type="text" name="provider" placeholder="Provider / scheme" list="providers" aria-label="Provider or scheme">
+    </div>
+    <div class="form-row">
+        <select name="relief_method" aria-label="Tax relief method">
+        {% for value, label in relief_methods.items() %}
+            <option value="{{ value }}">{{ label }}</option>
+        {% endfor %}
+        </select>
+        <select name="contribution_type" aria-label="Contribution type">
+        {% for value, label in contribution_types.items() %}
+            <option value="{{ value }}">{{ label }}</option>
+        {% endfor %}
+        </select>
+        <input type="text" name="notes" placeholder="Notes" aria-label="Notes">
+    </div>
+    <p class="hint" data-pension-preview aria-live="polite"></p>
+    <button type="submit" class="btn">Add Contribution</button>
+</form>
+
+<datalist id="providers">
+    {% set seen = [] %}
+    {% for p in items %}
+        {% if p.provider and p.provider not in seen %}
+            {% if seen.append(p.provider) %}{% endif %}
+            <option value="{{ p.provider }}">
+        {% endif %}
+    {% endfor %}
+</datalist>
+
+<form method="get" action="/pensions" class="inline-form" style="margin:1.5rem 0 1rem;gap:0.5rem;align-items:end">
+    <div>
+        <label for="ty">Tax Year</label>
+        <select name="ty" id="ty" onchange="this.form.submit()">
+            <option value="" {% if not selected_ty %}selected{% endif %}>All tax years</option>
+        {% for opt in year_options|reverse %}
+            <option value="{{ opt.value }}" {% if opt.value == selected_ty %}selected{% endif %}>{{ opt.label }}</option>
+        {% endfor %}
+        </select>
+    </div>
+</form>
+
+<div class="cards">
+    <div class="card card-green">
+        <div class="card-label">Contributions paid</div>
+        <div class="card-value">{{ totals.net|money }}</div>
+    </div>
+    <div class="card card-blue">
+        <div class="card-label">Tax relief added</div>
+        <div class="card-value">{{ totals.relief|money }}</div>
+    </div>
+    <div class="card card-orange">
+        <div class="card-label">Gross contributions</div>
+        <div class="card-value">{{ totals.gross|money }}</div>
+    </div>
+</div>
+
+{% if items %}
+<table>
+    <thead><tr><th>Date</th><th>Tax Year</th><th>Provider</th><th>Relief</th><th class="num">Paid</th><th class="num">Tax relief</th><th class="num">Gross</th><th></th></tr></thead>
+    <tbody>
+    {% for p in items %}
+    <tr>
+        <td>{{ p.date }}</td>
+        <td>{{ p.tax_year }}/{{ p.tax_year + 1 }}</td>
+        <td>{{ p.provider }}{% if p.notes %}<div class="hint">{{ p.notes }}</div>{% endif %}</td>
+        <td>{% if p.relief_method == 'relief_at_source' %}At source{% else %}None{% endif %}{% if p.contribution_type == 'single' %} · single{% endif %}</td>
+        <td class="num">{{ p.net|money }}</td>
+        <td class="num">{{ p.relief|money }}</td>
+        <td class="num">{{ p.gross|money }}</td>
+        <td>
+            <a href="/pensions/{{ p.id }}/edit" class="btn btn-sm btn-quiet">Edit</a>
+            <form method="POST" action="/pensions/{{ p.id }}/delete" class="inline" data-confirm="Permanently delete pension contribution of £{{ '%.2f'|format(p.net) }} on {{ p.date }} ({{ p.provider or 'no provider' }})?&#10;&#10;This cannot be undone."><input type="hidden" name="ty" value="{{ selected_ty }}"><button class="btn btn-sm btn-danger">X</button></form>
+        </td>
+    </tr>
+    {% endfor %}
+    <tr class="total-row">
+        <td colspan="4">Total</td>
+        <td class="num">{{ totals.net|money }}</td>
+        <td class="num">{{ totals.relief|money }}</td>
+        <td class="num">{{ totals.gross|money }}</td>
+        <td></td>
+    </tr>
+    </tbody>
+</table>
+{% else %}
+<div class="empty">
+    <span class="empty-title">No pension contributions {% if selected_ty %}in this tax year{% else %}yet{% endif %}</span>
+    <p>Record personal pension payments with the form above. They appear on the Reports page for Self Assessment, not in your expenses.</p>
+</div>
+{% endif %}
+{% endblock %}

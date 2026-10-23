@@ -21,8 +21,12 @@ businesses. It does the handful of things a sole trader actually needs, well:
 - **Income & expenses** — log what comes in and what goes out, with categories.
 - **Dashboard** — monthly revenue, costs and net at a glance, over 6 months,
   12 months, year to date or a custom range.
-- **Reports** — totals and breakdowns over any date range.
-- **Exports** — CSV of income and expenses for your accountant or tax return.
+- **Pensions** — personal pension contributions, kept apart from expenses, with
+  relief-at-source basic-rate relief and gross figures worked out for you.
+- **Reports** — totals by UK tax year or month, plus a Self Assessment summary
+  (business figures and pension contributions) for each tax year.
+- **Exports** — CSV of income, expenses and pension contributions, and a
+  one-file tax-year summary for your accountant or tax return.
 - **Appearance** — ten built-in colour palettes, including a dark one and a
   high-contrast one.
 - **Webhooks** — fire a notification (e.g. to n8n) when an invoice is created.
@@ -103,6 +107,10 @@ Two limitations worth knowing:
 - Income entries and invoices are separate ledgers with no link between them. If
   you log an invoice payment as income **and** mark the invoice paid, it is
   counted twice.
+
+Personal pension contributions are never part of Costs, Net or Profit. Their
+rules — relief at source, rounding, which figure goes on the Self Assessment
+return — are in the docstring at the top of [`pensions.py`](pensions.py).
 
 The exact rules, including the double-counting guards, are written out at the
 top of [`finance.py`](finance.py) — that docstring is the source of truth.

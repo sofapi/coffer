@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title_extra %} — Edit Pension Contribution{% endblock %}
+{% block content %}
+<h1>Edit Pension Contribution <span class="subtitle">Tax year {{ item.tax_year }}/{{ item.tax_year + 1 }}</span></h1>
+
+{% if error %}<div class="alert alert-danger" role="alert"><span class="alert-icon" aria-hidden="true">!</span><div>{{ error }}</div></div>{% endif %}
+
+<form method="POST" action="/pensions/{{ item.id }}/edit" class="form-card" data-pension-form data-relief-rate="{{ preview_rate }}">
+    <div class="form-row">
+        <input type="date" name="date" value="{{ item.date }}" required aria-label="Payment date">
+        <input type="number" name="amount_paid" step="0.01" min="0.01" value="{{ '%.2f'|format(item.net) }}" placeholder="Amount paid" required aria-label="Amount paid">
+        <input type="text" name="provider" value="{{ item.provider }}" placeholder="Provider / scheme" aria-label="Provider or scheme">
+    </div>
+    <div class="form-row">
+        <select name="relief_method" aria-label="Tax relief method">
+        {% for value, label in relief_methods.items() %}
+            <option value="{{ value }}" {% if value == item.relief_method %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+        </select>
+        <select name="contribution_type" aria-label="Contribution type">
+        {% for value, label in contribution_types.items() %}
+            <option value="{{ value }}" {% if value == item.contribution_type %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+        </select>
+        <input type="text" name="notes" value="{{ item.notes }}" placeholder="Notes" aria-label="Notes">
+    </div>
+    <p class="hint" data-pension-preview aria-live="polite"></p>
+    <p class="hint">Currently: paid {{ item.net|money }}, tax relief {{ item.relief|money }},
+       gross {{ item.gross|money }}{% if item.relief_method == 'relief_at_source' %} at a
+       {{ item.relief_rate }} relief rate (kept from when it was recorded){% endif %}.
+       Recorded {{ item.created_at }}{% if item.updated_at and item.updated_at != item.created_at %}, last updated {{ item.updated_at }}{% endif %}.</p>
+    <button type="submit" class="btn">Save</button>
+    <a href="/pensions?ty={{ item.tax_year }}" class="btn btn-quiet">Cancel</a>
+</form>
+{% endblock %}

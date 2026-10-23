@@ -186,6 +186,29 @@ def resolve_period(period: str, custom_from: str = "", custom_to: str = "",
     }
 
 
+# ---------------------------------------------------------------------------
+# UK tax years
+# ---------------------------------------------------------------------------
+# A UK tax year runs 6 April to 5 April and is named by the calendar year it
+# starts in: 6 Apr 2026 -> 5 Apr 2027 is tax year 2026 ("2026/2027"). This is
+# the one implementation of that rule; the Reports page and pensions use it.
+
+def tax_year_of(d: date) -> int:
+    """Start year of the tax year containing d. 5 April belongs to the year
+    that is ending, 6 April to the one that is starting."""
+    return d.year if d >= date(d.year, 4, 6) else d.year - 1
+
+
+def tax_year_bounds(ty: int) -> tuple[str, str]:
+    """Half-open [start, end) ISO dates for tax year `ty`."""
+    return f"{ty}-04-06", f"{ty + 1}-04-06"
+
+
+def tax_year_label(ty: int) -> str:
+    """2026 -> '2026/2027', matching the Reports page's tax-year picker."""
+    return f"{ty}/{ty + 1}"
+
+
 def month_label(key: str) -> str:
     """'2026-03' -> 'Mar 2026'."""
     year, month = key.split("-")

@@ -18,6 +18,20 @@
     <h2 style="margin-top:1.5rem;">Outgoing</h2>
     <p class="hint" style="margin-bottom:0.5rem;">All expense records with categories</p>
     <a id="btn-outgoing" href="/export/outgoing.csv" class="btn">Download Outgoing CSV</a>
+
+    <h2 style="margin-top:1.5rem;">Pension contributions</h2>
+    <p class="hint" style="margin-bottom:0.5rem;">Each payment with its basic-rate relief and gross figure</p>
+    <a id="btn-pensions" href="/export/pensions.csv" class="btn">Download Pensions CSV</a>
+</form>
+
+<form class="card" method="get" action="/export/tax-year.csv">
+    <h2>Tax year summary</h2>
+    <p class="hint" style="margin-bottom:0.5rem;">Income, expenses, profit and pension totals for one
+       UK tax year (6 April – 5 April), with the pension schedule. Useful for Self Assessment.</p>
+    <div class="inline-form">
+        <label>Tax year starting April <input type="number" name="ty" min="2000" max="2100" value="{{ current_ty }}" required style="max-width:7rem"></label>
+        <button type="submit" class="btn">Download Tax Year CSV</button>
+    </div>
 </form>
 
 <script>
@@ -26,6 +40,7 @@
     var toEl = document.getElementById('export-to');
     var btnIn = document.getElementById('btn-incoming');
     var btnOut = document.getElementById('btn-outgoing');
+    var btnPen = document.getElementById('btn-pensions');
 
     function updateLinks() {
         var params = [];
@@ -34,6 +49,7 @@
         var qs = params.length ? '?' + params.join('&') : '';
         btnIn.href = '/export/incoming.csv' + qs;
         btnOut.href = '/export/outgoing.csv' + qs;
+        btnPen.href = '/export/pensions.csv' + qs;
     }
 
     fromEl.addEventListener('change', updateLinks);
