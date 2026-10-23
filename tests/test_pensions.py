@@ -416,3 +416,37 @@ def test_tax_year_csv_defaults_to_the_current_year_when_empty(client):
     res = client.get("/export/tax-year.csv?ty=")
     assert res.status_code == 200
     assert f"tax-year_{current}-{current + 1}.csv" in res.headers["Content-Disposition"]
+
+
+# --------------------------------------------------------------------------
+# help text shows the configured rate, formatted as a percentage
+# --------------------------------------------------------------------------
+
+@pytest.mark.parametrize("value, shown", [
+    ("0.20", "20%"), ("0.2", "20%"), ("0.25", "25%"), ("0.205", "20.5%"), ("0", "0%"),
+    (Decimal("0.20"), "20%"), ("garbage", "garbage"),
+])
+def test_rate_pct_filter(value, shown):
+    import app as app_module
+    assert app_module.rate_pct_filter(value) == shown
+
+
+def test_help_text_shows_the_configured_rate(client, conn):
+    html = client.get("/pensions").get_data(as_text=True)
+    assert "configured relief-at-source" in html and "(currently 20%)" in html
+    assert "20.00%" not in html
+
+    import db as db_module
+    db_module.save_setting(conn, pensions.RELIEF_RATE_SETTING_KEY, "0.25")
+    html = client.get("/pensions").get_data(as_text=True)
+    assert "(currently 25%)" in html and "20%" not in html
+
+
+def test_edit_page_shows_the_rows_own_rate_as_a_percentage(client, conn):
+    import db as db_module
+    add_pension(client, "80", "2026-06-01")
+    db_module.save_setting(conn, pensions.RELIEF_RATE_SETTING_KEY, "0.25")
+    (row,) = all_rows(conn)
+    text = " ".join(client.get(f"/pensions/{row['id']}/edit").get_data(as_text=True).split())
+    assert "at a 20% relief rate (kept from when it was recorded)" in text
+    assert "0.20 relief rate" not in text

@@ -27,7 +27,7 @@
     <p class="hint" data-pension-preview aria-live="polite"></p>
     <p class="hint">Currently: paid {{ item.net|money }}, tax relief {{ item.relief|money }},
        gross {{ item.gross|money }}{% if item.relief_method == 'relief_at_source' %} at a
-       {{ item.relief_rate }} relief rate (kept from when it was recorded){% endif %}.
+       {{ item.relief_rate|rate_pct }} relief rate (kept from when it was recorded){% endif %}.
        Recorded {{ item.created_at }}{% if item.updated_at and item.updated_at != item.created_at %}, last updated {{ item.updated_at }}{% endif %}.</p>
     <button type="submit" class="btn">Save</button>
     <a href="/pensions?ty={{ item.tax_year }}" class="btn btn-quiet">Cancel</a>

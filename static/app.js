@@ -1,5 +1,7 @@
 // Auto-calculate line item amount from hours * rate
 document.addEventListener('DOMContentLoaded', () => {
+    initNavigation();
+
     const hours = document.getElementById('line-hours');
     const rate = document.getElementById('line-rate');
     const amount = document.getElementById('line-amount');
@@ -88,3 +90,91 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 });
+
+
+// Navigation: the hamburger (narrow screens) and the Money / Settings
+// disclosure menus. Each control's aria-expanded is the single source of
+// truth — style.css shows a panel from it — so screen readers always hear the
+// state that is on screen. Groups open on click/tap (never hover), close on an
+// outside click, on Escape, when focus leaves them, or when a link is chosen.
+function initNavigation() {
+    const toggle = document.querySelector('.nav-toggle');
+    const list = document.getElementById('nav-links');
+    const groups = Array.from(document.querySelectorAll('[data-nav-group]'));
+    if (!toggle || !list) return;
+
+    const buttonOf = g => g.querySelector('.nav-group-toggle');
+    const linksOf = g => Array.from(g.querySelectorAll('.nav-menu a'));
+    const isOpen = el => el.getAttribute('aria-expanded') === 'true';
+    const setGroup = (g, open) => buttonOf(g).setAttribute('aria-expanded', String(open));
+    const closeGroups = (except) => groups.forEach(g => { if (g !== except) setGroup(g, false); });
+    const setList = open => {
+        list.classList.toggle('open', open);
+        toggle.setAttribute('aria-expanded', String(open));
+    };
+
+    toggle.addEventListener('click', () => setList(!isOpen(toggle)));
+
+    groups.forEach(g => {
+        const button = buttonOf(g);
+
+        button.addEventListener('click', () => {
+            const open = !isOpen(button);
+            closeGroups(g);
+            setGroup(g, open);
+        });
+
+        // Down / Up on the button opens the panel at its first / last link.
+        button.addEventListener('keydown', e => {
+            if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+            e.preventDefault();
+            closeGroups(g);
+            setGroup(g, true);
+            const links = linksOf(g);
+            links[e.key === 'ArrowDown' ? 0 : links.length - 1].focus();
+        });
+
+        // Arrow keys / Home / End move between links; Tab works as normal.
+        g.querySelector('.nav-menu').addEventListener('keydown', e => {
+            const links = linksOf(g);
+            const i = links.indexOf(document.activeElement);
+            const next = {
+                ArrowDown: (i + 1) % links.length,
+                ArrowUp: (i - 1 + links.length) % links.length,
+                Home: 0,
+                End: links.length - 1,
+            }[e.key];
+            if (next === undefined) return;
+            e.preventDefault();
+            links[next].focus();
+        });
+
+        linksOf(g).forEach(a => a.addEventListener('click', () => setGroup(g, false)));
+
+        g.addEventListener('focusout', e => {
+            if (!g.contains(e.relatedTarget)) setGroup(g, false);
+        });
+    });
+
+    document.addEventListener('click', e => {
+        groups.forEach(g => { if (!g.contains(e.target)) setGroup(g, false); });
+        if (isOpen(toggle) && !e.target.closest('nav')) setList(false);
+    });
+
+    document.addEventListener('keydown', e => {
+        if (e.key !== 'Escape') return;
+        const open = groups.find(g => isOpen(buttonOf(g)));
+        if (open) {
+            setGroup(open, false);
+            buttonOf(open).focus();
+        } else if (isOpen(toggle)) {
+            setList(false);
+            toggle.focus();
+        }
+    });
+
+    // Back/forward can restore a page from cache with a menu still open.
+    window.addEventListener('pageshow', e => {
+        if (e.persisted) { closeGroups(); setList(false); }
+    });
+}

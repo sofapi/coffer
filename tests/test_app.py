@@ -4,6 +4,7 @@ payload, and that the existing pages still render."""
 import json
 import re
 from datetime import date
+from html.parser import HTMLParser
 
 import pytest
 
@@ -266,7 +267,7 @@ def test_paid_invoice_is_never_overdue(client, conn):
 @pytest.mark.parametrize("path", [
     "/", "/expenses", "/income", "/invoices", "/customers", "/reports",
     "/export", "/appearance", "/invoice-settings", "/webhooks", "/backup",
-    "/health",
+    "/pensions", "/health",
 ])
 def test_every_page_still_renders(client, path):
     assert client.get(path).status_code == 200
@@ -303,7 +304,7 @@ def test_csv_export_still_works(client, conn):
 def test_navigation_includes_appearance_without_losing_existing_links(client):
     html = client.get("/").get_data(as_text=True)
     for label in ("Dashboard", "Expenses", "Income", "Invoices", "Customers",
-                  "Reports", "Export", "Appearance", "Invoice Settings",
+                  "Pensions", "Reports", "Export", "Appearance", "Invoice Settings",
                   "Webhooks", "Backup"):
         assert f">{label}</a>" in html, label
 
@@ -359,3 +360,243 @@ def test_reports_rejects_a_month_outside_the_tax_year(client, month):
 def test_reports_accepts_a_month_inside_the_tax_year(client):
     for month in ("2026-04", "2027-03"):
         assert client.get(f"/reports?ty=2026&month={month}").status_code == 200
+
+
+# --------------------------------------------------------------------------
+# grouped navigation (Money / Settings)
+# --------------------------------------------------------------------------
+
+# Every page the navigation links to, exactly as before the regrouping.
+NAV_ROUTES = {
+    "/": "Dashboard", "/income": "Income", "/expenses": "Expenses",
+    "/pensions": "Pensions", "/invoices": "Invoices", "/customers": "Customers",
+    "/reports": "Reports", "/export": "Export", "/appearance": "Appearance",
+    "/invoice-settings": "Invoice Settings", "/webhooks": "Webhooks",
+    "/backup": "Backup",
+}
+MONEY = ["/income", "/expenses", "/pensions"]
+SETTINGS = ["/appearance", "/invoice-settings", "/webhooks", "/backup"]
+DIRECT = ["/", "/invoices", "/customers", "/reports", "/export"]
+
+
+class _NavParser(HTMLParser):
+    """Pulls the structure out of <nav>: top-level entries in order, groups
+    with their buttons / menus / links, and every element's attributes."""
+
+    def __init__(self):
+        super().__init__()
+        self.depth = 0          # >0 while inside <nav>
+        self.nav = None
+        self.toggle = None
+        self.top = []           # ("link", attrs) or ("group", group dict)
+        self.links = []         # every <a> with attrs + label + group id
+        self.groups = {}
+        self._group = None
+        self._link = None
+        self._button = None
+        self._ul_depth = 0
+
+    def handle_starttag(self, tag, attrs):
+        a = dict(attrs)
+        if tag == "nav":
+            self.depth, self.nav = 1, a
+            return
+        if not self.depth:
+            return
+        if tag == "ul":
+            self._ul_depth += 1
+        if tag == "li" and "data-nav-group" in a:
+            self._group = {"links": [], "button": None, "menu": None, "label": ""}
+        elif tag == "button" and "nav-toggle" in a.get("class", ""):
+            self.toggle = a
+        elif tag == "button" and self._group is not None:
+            self._group["button"] = a
+            self._button = self._group
+        elif tag == "ul" and self._group is not None:
+            self._group["menu"] = a
+        elif tag == "a":
+            self._link = {**a, "label": "", "group": self._group}
+        elif tag == "svg" and self._button is not None:
+            self._group["chevron"] = a
+
+    def handle_data(self, data):
+        if self._link is not None:
+            self._link["label"] += data
+        elif self._button is not None:
+            self._button["label"] += data.strip()
+
+    def handle_endtag(self, tag):
+        if not self.depth:
+            return
+        if tag == "nav":
+            self.depth = 0
+        elif tag == "button":
+            self._button = None
+        elif tag == "a" and self._link is not None:
+            link = self._link
+            self.links.append(link)
+            if link["group"] is not None:
+                link["group"]["links"].append(link)
+            elif self._ul_depth == 1:
+                self.top.append(("link", link))
+            self._link = None
+        elif tag == "ul":
+            self._ul_depth -= 1
+        elif tag == "li" and self._group is not None and self._ul_depth == 1:
+            g = self._group
+            self.groups[g["label"]] = g
+            self.top.append(("group", g))
+            self._group = None
+
+
+def nav_of(client, path):
+    res = client.get(path)
+    assert res.status_code == 200, path
+    parser = _NavParser()
+    parser.feed(res.get_data(as_text=True))
+    assert parser.nav is not None, f"no <nav> on {path}"
+    return parser
+
+
+def is_active(el):
+    return "active" in (el.get("class") or "").split()
+
+
+def current_links(nav):
+    return [link["href"] for link in nav.links if link.get("aria-current") == "page"]
+
+
+def test_top_level_navigation_is_grouped(client):
+    nav = nav_of(client, "/")
+    labels = [g["label"] if kind == "group" else g["label"] for kind, g in nav.top]
+    assert labels == ["Dashboard", "Money", "Invoices", "Customers", "Reports",
+                      "Export", "Settings"]
+
+
+def test_dashboard_navigation(client):
+    nav = nav_of(client, "/")
+    dashboard = next(link for link in nav.links if link["href"] == "/")
+    assert dashboard["label"] == "Dashboard" and dashboard["group"] is None
+    assert is_active(dashboard) and current_links(nav) == ["/"]
+
+
+def test_money_menu_contains_income_expenses_pensions_in_order(client):
+    money = nav_of(client, "/").groups["Money"]
+    assert [(link["href"], link["label"]) for link in money["links"]] == [
+        ("/income", "Income"), ("/expenses", "Expenses"), ("/pensions", "Pensions")]
+
+
+def test_settings_menu_contains_the_four_settings_pages_in_order(client):
+    settings = nav_of(client, "/").groups["Settings"]
+    assert [(link["href"], link["label"]) for link in settings["links"]] == [
+        ("/appearance", "Appearance"), ("/invoice-settings", "Invoice Settings"),
+        ("/webhooks", "Webhooks"), ("/backup", "Backup")]
+
+
+def test_navigation_routes_are_unchanged(client):
+    """Same twelve destinations as the flat navigation, each linked once, each
+    still rendering. No new routes."""
+    nav = nav_of(client, "/")
+    assert {link["href"]: link["label"] for link in nav.links} == NAV_ROUTES
+    assert len(nav.links) == len(NAV_ROUTES)
+    for href in NAV_ROUTES:
+        assert client.get(href).status_code == 200, href
+
+
+@pytest.mark.parametrize("path", MONEY)
+def test_money_is_active_on_its_pages(client, path):
+    nav = nav_of(client, path)
+    assert is_active(nav.groups["Money"]["button"])
+    assert not is_active(nav.groups["Settings"]["button"])
+    assert current_links(nav) == [path]
+    link = next(link for link in nav.links if link["href"] == path)
+    assert is_active(link) and link["group"] is nav.groups["Money"]
+
+
+@pytest.mark.parametrize("path", SETTINGS)
+def test_settings_is_active_on_its_pages(client, path):
+    nav = nav_of(client, path)
+    assert is_active(nav.groups["Settings"]["button"])
+    assert not is_active(nav.groups["Money"]["button"])
+    assert current_links(nav) == [path]
+    link = next(link for link in nav.links if link["href"] == path)
+    assert is_active(link) and link["group"] is nav.groups["Settings"]
+
+
+@pytest.mark.parametrize("path", DIRECT)
+def test_direct_items_keep_their_own_active_state(client, path):
+    nav = nav_of(client, path)
+    assert current_links(nav) == [path]
+    assert is_active(next(link for link in nav.links if link["href"] == path))
+    assert not is_active(nav.groups["Money"]["button"])
+    assert not is_active(nav.groups["Settings"]["button"])
+
+
+def test_active_state_follows_sub_pages_as_before(client, conn):
+    """The flat navigation matched by path prefix, so an invoice or customer
+    page kept its section highlighted. That must still hold."""
+    cid = add_customer(conn)
+    inv = add_invoice(conn, cid, "2026-05-01", [10.0])
+    client.post("/pensions/add", data={"date": "2026-05-01", "amount_paid": "80",
+                                       "relief_method": "relief_at_source",
+                                       "contribution_type": "regular"})
+    pid = conn.execute("SELECT id FROM pension_contributions").fetchone()["id"]
+    assert current_links(nav_of(client, f"/invoices/{inv}")) == ["/invoices"]
+    assert current_links(nav_of(client, f"/customers/{cid}")) == ["/customers"]
+    nav = nav_of(client, f"/pensions/{pid}/edit")
+    assert current_links(nav) == ["/pensions"] and is_active(nav.groups["Money"]["button"])
+
+
+def test_invoice_settings_is_not_mistaken_for_invoices(client):
+    nav = nav_of(client, "/invoice-settings")
+    assert current_links(nav) == ["/invoice-settings"]
+    assert not is_active(next(link for link in nav.links if link["href"] == "/invoices"))
+
+
+def test_navigation_accessibility_attributes(client):
+    nav = nav_of(client, "/")
+    assert nav.nav.get("aria-label") == "Main"
+
+    toggle = nav.toggle
+    assert toggle["type"] == "button" and toggle["aria-label"] == "Menu"
+    assert toggle["aria-expanded"] == "false" and toggle["aria-controls"] == "nav-links"
+    assert "onclick" not in toggle  # behaviour lives in app.js
+
+    for label, group in nav.groups.items():
+        button, menu = group["button"], group["menu"]
+        assert button["type"] == "button", label
+        assert button["aria-expanded"] == "false", label           # closed on load
+        assert button["aria-controls"] == menu["id"], label
+        assert menu["aria-labelledby"] == button["id"], label
+        assert group["chevron"]["aria-hidden"] == "true", label     # decoration only
+        # Disclosure pattern, not an ARIA application menu: plain links.
+        assert "role" not in menu and "aria-haspopup" not in button, label
+        assert all("role" not in link for link in group["links"]), label
+
+    ids = [nav.toggle["aria-controls"]] + [g["menu"]["id"] for g in nav.groups.values()]
+    html = client.get("/").get_data(as_text=True)
+    for element_id in ids:
+        assert html.count(f'id="{element_id}"') == 1, element_id
+
+
+@pytest.mark.parametrize("path", list(NAV_ROUTES))
+def test_every_page_renders_the_same_navigation(client, path):
+    nav = nav_of(client, path)
+    assert {link["href"] for link in nav.links} == set(NAV_ROUTES)
+    assert set(nav.groups) == {"Money", "Settings"}
+    assert len(current_links(nav)) == 1
+
+
+def test_dropdowns_open_from_script_state_not_hover():
+    """The panel is shown from aria-expanded (set by app.js on click/keys),
+    and nothing opens a group on :hover."""
+    with open("static/style.css") as fh:
+        css = fh.read()
+    with open("static/app.js") as fh:
+        js = fh.read()
+    assert '.nav-group-toggle[aria-expanded="true"] ~ .nav-menu { display: block; }' in css
+    assert not re.search(r"\.nav-group:hover|:hover\s*~\s*\.nav-menu|:hover\s+\.nav-menu", css)
+    for behaviour in ("initNavigation", "'Escape'", "'ArrowDown'", "'ArrowUp'",
+                      "focusout", "aria-expanded"):
+        assert behaviour in js, behaviour
+    assert "mouseover" not in js and "mouseenter" not in js

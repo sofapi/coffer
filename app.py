@@ -7,6 +7,7 @@ import sqlite3
 import tempfile
 import threading
 from datetime import date, datetime, timedelta
+from decimal import Decimal, InvalidOperation
 
 import requests as http_requests
 from flask import (
@@ -89,6 +90,17 @@ def money0_filter(value):
     back into a calculation — the arithmetic is all done in finance.py.
     """
     return _money(value, 0)
+
+
+@app.template_filter("rate_pct")
+def rate_pct_filter(value):
+    """A stored relief rate as a percentage for display: '0.20' -> '20%',
+    '0.205' -> '20.5%'. Display only; calculations use the stored string."""
+    try:
+        pct = (Decimal(str(value)) * 100).normalize()
+    except InvalidOperation:
+        return str(value)
+    return f"{pct:f}%"
 
 
 @app.template_global("invoice_status")
@@ -488,7 +500,7 @@ def pensions_list():
         selected_ty=selected_ty, period_label=label, year_options=year_options,
         relief_methods=pensions.RELIEF_METHODS,
         contribution_types=pensions.CONTRIBUTION_TYPES,
-        relief_rate=rate, relief_rate_pct=f"{rate * 100:g}",
+        relief_rate=rate,
         error=request.args.get("error"),
     )
 

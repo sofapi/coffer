@@ -4,9 +4,10 @@
 <h1>Pension Contributions <span class="subtitle">{{ period_label }}</span></h1>
 <p class="hint">Personal pension payments, kept separate from expenses — they never
    reduce business profit. Enter the amount that actually left your bank account;
-   for relief-at-source schemes Coffer works out the basic-rate relief
-   ({{ relief_rate_pct }}%) your provider claims from HMRC and adds to your pension.
-   That relief goes into the pension pot — it is not refunded to you.</p>
+   for relief-at-source schemes Coffer works out the basic-rate relief your provider
+   claims from HMRC and adds to your pension, using the configured relief-at-source
+   rate (currently {{ relief_rate|rate_pct }}). That relief goes into the pension
+   pot — it is not refunded to you.</p>
 
 {% if error %}<div class="alert alert-danger" role="alert"><span class="alert-icon" aria-hidden="true">!</span><div>{{ error }}</div></div>{% endif %}
 

@@ -91,9 +91,16 @@ nav {
   border-radius: var(--radius-sm);
 }
 
-.nav-links { display: flex; flex-wrap: wrap; gap: 2px; }
+@media (hover: hover) {  /* touch screens keep :hover after a tap */
+  .nav-toggle:hover { background: color-mix(in srgb, var(--brand-on) 14%, transparent); }
+}
+.nav-toggle:focus-visible { outline-color: var(--brand-on); }
 
-.nav-links a {
+.nav-links { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; list-style: none; }
+
+/* Top-level links and the Money / Settings buttons share one look. */
+.nav-links a,
+.nav-group-toggle {
   color: var(--brand-on);
   opacity: 0.78;
   text-decoration: none;
@@ -103,9 +110,62 @@ nav {
   transition: background var(--dur) var(--ease), opacity var(--dur) var(--ease);
 }
 
-.nav-links a:hover { opacity: 1; background: color-mix(in srgb, var(--brand-on) 14%, transparent); }
-.nav-links a.active { opacity: 1; background: color-mix(in srgb, var(--brand-on) 20%, transparent); font-weight: 550; }
-.nav-links a:focus-visible { outline-color: var(--brand-on); }
+.nav-links a:hover,
+.nav-group-toggle:hover,
+.nav-group-toggle[aria-expanded="true"] { opacity: 1; background: color-mix(in srgb, var(--brand-on) 14%, transparent); }
+.nav-links a.active,
+.nav-group-toggle.active { opacity: 1; background: color-mix(in srgb, var(--brand-on) 20%, transparent); font-weight: 550; }
+.nav-links a:focus-visible,
+.nav-group-toggle:focus-visible { outline-color: var(--brand-on); }
+
+/* Money / Settings: a disclosure button and a small panel (static/app.js).
+   The panel is shown from the button's aria-expanded, so the visible state
+   and the state announced to assistive technology cannot disagree. */
+.nav-group { position: relative; }
+
+.nav-group-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: none;
+  border: none;
+  font-family: inherit;
+  line-height: inherit;
+  cursor: pointer;
+}
+
+.nav-chevron { opacity: 0.8; transition: transform var(--dur) var(--ease); }
+.nav-group-toggle[aria-expanded="true"] .nav-chevron { transform: rotate(180deg); }
+
+.nav-group-label { display: none; }  /* section heading, narrow screens only */
+
+.nav-menu {
+  display: none;
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 110;
+  min-width: 11rem;
+  list-style: none;
+  padding: var(--space-1);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-2);
+}
+.nav-group-toggle[aria-expanded="true"] ~ .nav-menu { display: block; }
+.nav-group:last-child .nav-menu { left: auto; right: 0; }  /* keep Settings on screen */
+
+.nav-links .nav-menu a {
+  display: block;
+  color: var(--text);
+  opacity: 1;
+  white-space: nowrap;
+  padding: 0.45rem 0.7rem;
+}
+.nav-links .nav-menu a:hover { background: var(--surface-alt); }
+.nav-links .nav-menu a.active { background: var(--brand-soft); color: var(--brand-soft-on); }
+.nav-links .nav-menu a:focus-visible { outline-color: var(--focus); outline-offset: -2px; }
 
 /* -------------------------------------------------------------- layout --- */
 
@@ -803,8 +863,32 @@ details[open] summary { margin-bottom: var(--space-3); }
   .nav-toggle { display: block; }
   .nav-brand { font-size: 0.95rem; margin-right: auto; }
   .nav-links { display: none; width: 100%; padding: var(--space-2) 0; }
-  .nav-links.open { display: flex; flex-direction: column; }
-  .nav-links a { padding: 0.6rem 0.8rem; font-size: 1rem; }
+  .nav-links.open {
+    display: flex; flex-direction: column; align-items: stretch; gap: 0;
+    max-height: calc(100vh - 52px); overflow-y: auto;  /* long list on a short phone */
+  }
+  .nav-links a { display: flex; align-items: center; min-height: 44px; padding: 0.6rem 0.8rem; font-size: 1rem; }
+
+  /* Groups are shown expanded under a label instead of as dropdowns. */
+  .nav-group { border-top: 1px solid color-mix(in srgb, var(--brand-on) 18%, transparent); margin-top: var(--space-1); }
+  .nav-group-toggle { display: none; }
+  .nav-group-label {
+    display: block;
+    padding: var(--space-3) 0.8rem var(--space-1);
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    opacity: 0.7;
+  }
+  .nav-menu, .nav-group-toggle[aria-expanded="true"] ~ .nav-menu {
+    display: block; position: static; min-width: 0;
+    padding: 0; background: none; border: none; box-shadow: none;
+  }
+  .nav-links .nav-menu a { color: var(--brand-on); opacity: 0.78; padding-left: 1.4rem; white-space: normal; }
+  .nav-links .nav-menu a:hover { background: color-mix(in srgb, var(--brand-on) 14%, transparent); opacity: 1; }
+  .nav-links .nav-menu a.active { background: color-mix(in srgb, var(--brand-on) 20%, transparent); color: var(--brand-on); opacity: 1; }
+  .nav-links .nav-menu a:focus-visible { outline-color: var(--brand-on); }
 
   main { padding: 0 var(--space-3); margin-top: var(--space-4); }
   h1 { font-size: 1.3rem; }
