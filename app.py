@@ -6,7 +6,7 @@ import os
 import sqlite3
 import tempfile
 import threading
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 import requests as http_requests
 from flask import (
@@ -21,6 +21,7 @@ from flask import (
 )
 
 import finance
+import pensions
 from db import get_db, get_settings, init_db, next_invoice_number, save_setting
 from pdf_gen import generate_invoice_pdf
 from theme import (
@@ -178,21 +179,58 @@ def fire_webhooks(event: str, payload: dict):
 # Web UI routes
 # ---------------------------------------------------------------------------
 
+def _report_figures(conn, start, end):
+    """Income / expenses / profit / pensions for [start, end), as the Reports
+    page shows them. Shared with the tax-year CSV so the two cannot disagree."""
+    income_total = conn.execute(
+        "SELECT COALESCE(SUM(amount),0) as t FROM income WHERE date >= ? AND date < ?",
+        (start, end)
+    ).fetchone()["t"]
+    expenses_total = conn.execute(
+        "SELECT COALESCE(SUM(amount),0) as t FROM expenses WHERE date >= ? AND date < ?",
+        (start, end)
+    ).fetchone()["t"]
+    # Invoice income (paid invoices in the period)
+    invoice_income = conn.execute(
+        """SELECT COALESCE(SUM(il.amount),0) as t FROM invoice_lines il
+           JOIN invoices i ON il.invoice_id=i.id
+           WHERE i.status='paid' AND i.date >= ? AND i.date < ?""",
+        (start, end)
+    ).fetchone()["t"]
+    total_income = income_total + invoice_income
+    # Personal pension contributions. Reported alongside, never subtracted
+    # from profit: they are not a business expense.
+    contributions = pensions.list_contributions(conn, start, end)
+    return {
+        "income": total_income,
+        "expenses": expenses_total,
+        "profit": total_income - expenses_total,
+        "pensions": pensions.totals(contributions),
+        "pension_items": contributions,
+    }
+
+
 @app.route("/reports")
 def reports():
-    # UK tax year: 6 April to 5 April
-    today = date.today()
-    # Determine current tax year start year (e.g. 2025 for 2025/26)
-    if today >= date(today.year, 4, 6):
-        current_ty = today.year
-    else:
-        current_ty = today.year - 1
+    # UK tax year: 6 April to 5 April (rule lives in finance.tax_year_of)
+    current_ty = finance.tax_year_of(date.today())
 
-    selected_ty = request.args.get("ty", str(current_ty))
+    ty_arg = request.args.get("ty", "").strip()
     selected_month = request.args.get("month", "")  # e.g. "2025-04" or "" for full year
-    ty = int(selected_ty)
-    ty_start = f"{ty}-04-06"
-    ty_end = f"{ty + 1}-04-06"
+    ty = finance.parse_tax_year(ty_arg) if ty_arg else current_ty
+    if ty is None:
+        return redirect(url_for("reports", error=f"'{ty_arg}' is not a valid tax year."))
+    selected_ty = str(ty)
+    ty_start, ty_end = finance.tax_year_bounds(ty)
+
+    # Build month options for the tax year (Apr, May, ... Mar)
+    months = []
+    for i in range(12):
+        m = ((4 + i - 1) % 12) + 1  # 4,5,6,...12,1,2,3
+        y = ty if m >= 4 else ty + 1
+        months.append({"value": f"{y}-{m:02d}", "label": date(y, m, 1).strftime("%b %Y")})
+    if selected_month and selected_month not in {m["value"] for m in months}:
+        return redirect(url_for("reports", ty=ty, error="That month is not in the selected tax year."))
 
     if selected_month:
         parts = selected_month.split("-")
@@ -211,21 +249,7 @@ def reports():
 
     conn = get_db()
 
-    income_total = conn.execute(
-        "SELECT COALESCE(SUM(amount),0) as t FROM income WHERE date >= ? AND date < ?",
-        (period_start, period_end)
-    ).fetchone()["t"]
-    expenses_total = conn.execute(
-        "SELECT COALESCE(SUM(amount),0) as t FROM expenses WHERE date >= ? AND date < ?",
-        (period_start, period_end)
-    ).fetchone()["t"]
-    # Invoice income (paid invoices in the period)
-    invoice_income = conn.execute(
-        """SELECT COALESCE(SUM(il.amount),0) as t FROM invoice_lines il
-           JOIN invoices i ON il.invoice_id=i.id
-           WHERE i.status='paid' AND i.date >= ? AND i.date < ?""",
-        (period_start, period_end)
-    ).fetchone()["t"]
+    figures = _report_figures(conn, period_start, period_end)
     # Unpaid invoices in the period. Counted from a per-invoice aggregate: a
     # plain JOIN onto invoice_lines would count line items, not invoices.
     unpaid = conn.execute(
@@ -236,28 +260,19 @@ def reports():
         (period_start, period_end)
     ).fetchone()
 
-    total_income = income_total + invoice_income
-
-    # Build month options for the tax year (Apr, May, ... Mar)
-    months = []
-    for i in range(12):
-        m = ((4 + i - 1) % 12) + 1  # 4,5,6,...12,1,2,3
-        y = ty if m >= 4 else ty + 1
-        months.append({"value": f"{y}-{m:02d}", "label": date(y, m, 1).strftime("%b %Y")})
-
     # Tax year options: from earliest data year to current
     earliest = conn.execute(
         """SELECT MIN(d) as d FROM (
             SELECT MIN(date) as d FROM expenses
             UNION SELECT MIN(date) as d FROM income
-            UNION SELECT MIN(date) as d FROM invoices)"""
+            UNION SELECT MIN(date) as d FROM invoices
+            UNION SELECT MIN(date) as d FROM pension_contributions)"""
     ).fetchone()["d"]
     conn.close()
 
     ty_options = []
     if earliest:
-        ed = datetime.strptime(earliest, "%Y-%m-%d").date()
-        start_ty = ed.year if ed >= date(ed.year, 4, 6) else ed.year - 1
+        start_ty = finance.tax_year_of(datetime.strptime(earliest, "%Y-%m-%d").date())
     else:
         start_ty = current_ty
     for y in range(start_ty, current_ty + 1):
@@ -266,10 +281,11 @@ def reports():
     return render_template("reports.html",
         selected_ty=selected_ty, selected_month=selected_month,
         period_label=period_label,
-        income_total=total_income, expenses_total=expenses_total,
-        profit=total_income - expenses_total,
+        income_total=figures["income"], expenses_total=figures["expenses"],
+        profit=figures["profit"],
         unpaid_count=unpaid["c"], unpaid_total=unpaid["t"],
-        months=months, ty_options=ty_options)
+        pension_totals=figures["pensions"], tax_year_label=finance.tax_year_label(ty),
+        months=months, ty_options=ty_options, error=request.args.get("error"))
 
 
 def _dashboard_args():
@@ -330,6 +346,39 @@ def api_dashboard_performance():
         conn.close()
 
 
+# --- Money input ---
+# Amounts are validated with finance.parse_money (Decimal) and only then
+# converted to float, because the legacy income / expenses / invoice_lines
+# columns are REAL. See TECH-DEBT.md before changing that.
+#
+# Negative amounts: allowed for expenses only — a negative expense is the
+# documented stand-in for a refund (see test_finance). Income, rates, hours and
+# invoice line amounts must not be negative.
+
+def _invoice_line_values(src):
+    """(hours, rate, amount) as floats from a form or JSON line, or MoneyError.
+
+    As before, a blank amount is filled from hours x rate; that product is now
+    rounded half-up to the penny instead of being stored unrounded.
+    """
+    hours = finance.parse_money(src.get("hours"), "Hours", required=False)
+    rate = finance.parse_money(src.get("rate"), "Rate", required=False)
+    amount = finance.parse_money(src.get("amount"), "Line amount", required=False)
+    if hours and rate and not amount:
+        amount = finance.round_money(hours * rate)
+    return float(hours), float(rate), float(amount)
+
+
+def _json_body():
+    """The request's JSON object, or None if it is missing or not an object."""
+    data = request.get_json(silent=True)
+    return data if isinstance(data, dict) else None
+
+
+def _api_error(message):
+    return jsonify({"error": message}), 400
+
+
 # --- Expenses ---
 
 @app.route("/expenses")
@@ -337,15 +386,19 @@ def expenses_list():
     conn = get_db()
     rows = conn.execute("SELECT * FROM expenses ORDER BY date DESC").fetchall()
     conn.close()
-    return render_template("expenses.html", expenses=rows)
+    return render_template("expenses.html", expenses=rows, error=request.args.get("error"))
 
 
 @app.route("/expenses/add", methods=["POST"])
 def expenses_add():
+    try:
+        amount = finance.parse_money(request.form.get("amount"), allow_negative=True)
+    except finance.MoneyError as exc:
+        return redirect(url_for("expenses_list", error=str(exc)))
     conn = get_db()
     conn.execute(
         "INSERT INTO expenses (amount, date, reference, category) VALUES (?,?,?,?)",
-        (request.form["amount"], request.form["date"],
+        (float(amount), request.form["date"],
          request.form.get("reference", ""), request.form.get("category", ""))
     )
     conn.commit()
@@ -369,15 +422,19 @@ def income_list():
     conn = get_db()
     rows = conn.execute("SELECT * FROM income ORDER BY date DESC").fetchall()
     conn.close()
-    return render_template("income.html", income=rows)
+    return render_template("income.html", income=rows, error=request.args.get("error"))
 
 
 @app.route("/income/add", methods=["POST"])
 def income_add():
+    try:
+        amount = finance.parse_money(request.form.get("amount"))
+    except finance.MoneyError as exc:
+        return redirect(url_for("income_list", error=str(exc)))
     conn = get_db()
     conn.execute(
         "INSERT INTO income (amount, date, reference) VALUES (?,?,?)",
-        (request.form["amount"], request.form["date"], request.form.get("reference", ""))
+        (float(amount), request.form["date"], request.form.get("reference", ""))
     )
     conn.commit()
     conn.close()
@@ -391,6 +448,102 @@ def income_delete(id):
     conn.commit()
     conn.close()
     return redirect(url_for("income_list"))
+
+
+# --- Pension contributions ---
+# Personal pension payments live in their own table and pages, never in
+# expenses: they are not a business cost. Rules and arithmetic: pensions.py.
+
+def _pension_year_options(conn, current_ty):
+    earliest = pensions.earliest_date(conn)
+    start_ty = finance.tax_year_of(date.fromisoformat(earliest)) if earliest else current_ty
+    return [{"value": str(y), "label": finance.tax_year_label(y)}
+            for y in range(min(start_ty, current_ty), current_ty + 1)]
+
+
+@app.route("/pensions")
+def pensions_list():
+    current_ty = finance.tax_year_of(date.today())
+    selected_ty = request.args.get("ty", str(current_ty)).strip()  # "" = all years
+    ty = finance.parse_tax_year(selected_ty)
+    if selected_ty and ty is None:
+        return redirect(url_for("pensions_list",
+                                error=f"'{selected_ty}' is not a valid tax year."))
+    conn = get_db()
+    try:
+        if ty is not None:
+            start, end = finance.tax_year_bounds(ty)
+            label = f"Tax year {finance.tax_year_label(ty)}"
+        else:
+            start, end, label = "", "", "All tax years"
+        items = pensions.list_contributions(conn, start, end)
+        year_options = _pension_year_options(conn, current_ty)
+        rate = pensions.configured_rate(get_settings(conn))
+    finally:
+        conn.close()
+    items.reverse()  # newest first, like the other ledgers
+    return render_template(
+        "pensions.html",
+        items=items, totals=pensions.totals(items),
+        selected_ty=selected_ty, period_label=label, year_options=year_options,
+        relief_methods=pensions.RELIEF_METHODS,
+        contribution_types=pensions.CONTRIBUTION_TYPES,
+        relief_rate=rate, relief_rate_pct=f"{rate * 100:g}",
+        error=request.args.get("error"),
+    )
+
+
+@app.route("/pensions/add", methods=["POST"])
+def pensions_add():
+    conn = get_db()
+    try:
+        values = pensions.validate_form(request.form, get_settings(conn))
+        pensions.insert(conn, values)
+    except pensions.PensionError as exc:
+        return redirect(url_for("pensions_list", error=str(exc)))
+    finally:
+        conn.close()
+    ty = finance.tax_year_of(date.fromisoformat(values["date"]))
+    return redirect(url_for("pensions_list", ty=ty))
+
+
+@app.route("/pensions/<int:id>/edit", methods=["GET", "POST"])
+def pensions_edit(id):
+    conn = get_db()
+    try:
+        existing = pensions.get(conn, id)
+        if existing is None:
+            return redirect(url_for("pensions_list"))
+        if request.method == "POST":
+            try:
+                values = pensions.validate_form(request.form, get_settings(conn), existing)
+            except pensions.PensionError as exc:
+                return redirect(url_for("pensions_edit", id=id, error=str(exc)))
+            pensions.update(conn, id, values)
+            ty = finance.tax_year_of(date.fromisoformat(values["date"]))
+            return redirect(url_for("pensions_list", ty=ty))
+        item = pensions.enrich(existing)
+        # Rate the live preview uses: the row's own, or the current setting
+        # if the user switches it to relief at source.
+        preview_rate = (existing["relief_rate"]
+                        if existing["relief_method"] == pensions.RELIEF_AT_SOURCE
+                        else str(pensions.configured_rate(get_settings(conn))))
+    finally:
+        conn.close()
+    return render_template(
+        "pension_edit.html", item=item, preview_rate=preview_rate,
+        relief_methods=pensions.RELIEF_METHODS,
+        contribution_types=pensions.CONTRIBUTION_TYPES,
+        error=request.args.get("error"),
+    )
+
+
+@app.route("/pensions/<int:id>/delete", methods=["POST"])
+def pensions_delete(id):
+    conn = get_db()
+    pensions.delete(conn, id)
+    conn.close()
+    return redirect(url_for("pensions_list", ty=request.form.get("ty", "")))
 
 
 # --- Customers ---
@@ -497,16 +650,16 @@ def invoice_detail(id):
     lines = conn.execute("SELECT * FROM invoice_lines WHERE invoice_id=? ORDER BY id", (id,)).fetchall()
     total = sum(line["amount"] for line in lines)
     conn.close()
-    return render_template("invoice_detail.html", invoice=invoice, customer=customer, lines=lines, total=total)
+    return render_template("invoice_detail.html", invoice=invoice, customer=customer, lines=lines, total=total,
+                           error=request.args.get("error"))
 
 
 @app.route("/invoices/<int:id>/add-line", methods=["POST"])
 def invoice_add_line(id):
-    hours = float(request.form.get("hours", 0) or 0)
-    rate = float(request.form.get("rate", 0) or 0)
-    amount = float(request.form.get("amount", 0) or 0)
-    if hours and rate and not amount:
-        amount = hours * rate
+    try:
+        hours, rate, amount = _invoice_line_values(request.form)
+    except finance.MoneyError as exc:
+        return redirect(url_for("invoice_detail", id=id, error=str(exc)))
 
     conn = get_db()
     conn.execute(
@@ -693,7 +846,8 @@ def invoice_settings_preview():
 
 @app.route("/export")
 def export_page():
-    return render_template("export.html")
+    return render_template("export.html", current_ty=finance.tax_year_of(date.today()),
+                           min_ty=finance.MIN_TAX_YEAR, error=request.args.get("error"))
 
 
 @app.route("/export/incoming.csv")
@@ -802,18 +956,103 @@ def export_outgoing_csv():
                     headers={"Content-Disposition": f"attachment; filename={filename}"})
 
 
+@app.route("/export/pensions.csv")
+def export_pensions_csv():
+    """Pension contribution schedule. Same inclusive from/to as the others."""
+    date_from = request.args.get("from", "")
+    date_to = request.args.get("to", "")
+    end = ""
+    if date_to:
+        to = finance.parse_iso(date_to)
+        end = (to + timedelta(days=1)).isoformat() if to else date_to
+    conn = get_db()
+    items = pensions.list_contributions(conn, date_from, end)
+    conn.close()
+
+    output = io.StringIO()
+    _write_pension_schedule(csv.writer(output), items)
+
+    filename = "pensions"
+    if date_from:
+        filename += f"_from_{date_from}"
+    if date_to:
+        filename += f"_to_{date_to}"
+    filename += ".csv"
+    return Response(output.getvalue(), mimetype="text/csv",
+                    headers={"Content-Disposition": f"attachment; filename={filename}"})
+
+
+def _write_pension_schedule(writer, items):
+    writer.writerow(["Date", "Tax Year", "Provider", "Contribution Type", "Relief Method",
+                     "Relief Rate", "Paid (Net)", "Basic-rate Relief", "Gross", "Notes"])
+    for i in items:
+        writer.writerow([
+            i["date"], finance.tax_year_label(i["tax_year"]), i["provider"],
+            pensions.CONTRIBUTION_TYPES.get(i["contribution_type"], i["contribution_type"]),
+            pensions.RELIEF_METHODS.get(i["relief_method"], i["relief_method"]),
+            i["relief_rate"], f"{i['net']:.2f}", f"{i['relief']:.2f}", f"{i['gross']:.2f}",
+            i["notes"],
+        ])
+
+
+@app.route("/export/tax-year.csv")
+def export_tax_year_csv():
+    """One tax year's summary for the Self Assessment return, followed by the
+    pension schedule behind the pension figures."""
+    ty_arg = request.args.get("ty", "").strip()
+    ty = finance.parse_tax_year(ty_arg) if ty_arg else finance.tax_year_of(date.today())
+    if ty is None:
+        return redirect(url_for("export_page", error=f"'{ty_arg}' is not a valid tax year."))
+    start, end = finance.tax_year_bounds(ty)
+    conn = get_db()
+    figures = _report_figures(conn, start, end)
+    conn.close()
+    p = figures["pensions"]
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["Tax Year", finance.tax_year_label(ty)])
+    writer.writerow(["Period", f"{start} to {(date.fromisoformat(end) - timedelta(days=1)).isoformat()}"])
+    writer.writerow([])
+    writer.writerow(["Business", "Amount"])
+    writer.writerow(["Income / turnover", f"{figures['income']:.2f}"])
+    writer.writerow(["Expenses", f"{figures['expenses']:.2f}"])
+    writer.writerow(["Profit", f"{figures['profit']:.2f}"])
+    writer.writerow([])
+    writer.writerow(["Pension contributions", "Amount"])
+    writer.writerow(["Net personal contributions paid", f"{p['net']:.2f}"])
+    writer.writerow(["Basic-rate relief added by provider", f"{p['relief']:.2f}"])
+    writer.writerow(["Gross pension contributions", f"{p['gross']:.2f}"])
+    writer.writerow(["Gross relief-at-source contributions (Self Assessment)",
+                     f"{p['ras_gross']:.2f}"])
+    writer.writerow(["Gross contributions without relief at source", f"{p['other_gross']:.2f}"])
+    writer.writerow([])
+    writer.writerow(["Pension contribution schedule"])
+    _write_pension_schedule(writer, figures["pension_items"])
+
+    return Response(output.getvalue(), mimetype="text/csv",
+                    headers={"Content-Disposition":
+                             f"attachment; filename=tax-year_{ty}-{ty + 1}.csv"})
+
+
 # ---------------------------------------------------------------------------
 # REST API
 # ---------------------------------------------------------------------------
 
 @app.route("/api/expenses", methods=["GET", "POST"])
 def api_expenses():
-    conn = get_db()
     if request.method == "POST":
-        data = request.json
+        data = _json_body()
+        if data is None:
+            return _api_error("Expected a JSON object.")
+        try:
+            amount = finance.parse_money(data.get("amount"), allow_negative=True)
+        except finance.MoneyError as exc:
+            return _api_error(str(exc))
+        conn = get_db()
         conn.execute(
             "INSERT INTO expenses (amount, date, reference, category) VALUES (?,?,?,?)",
-            (data["amount"], data["date"], data.get("reference", ""), data.get("category", ""))
+            (float(amount), data["date"], data.get("reference", ""), data.get("category", ""))
         )
         conn.commit()
         eid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
@@ -821,6 +1060,7 @@ def api_expenses():
         conn.close()
         return jsonify(row), 201
     else:
+        conn = get_db()
         rows = [dict(r) for r in conn.execute("SELECT * FROM expenses ORDER BY date DESC").fetchall()]
         conn.close()
         return jsonify(rows)
@@ -828,12 +1068,18 @@ def api_expenses():
 
 @app.route("/api/income", methods=["GET", "POST"])
 def api_income():
-    conn = get_db()
     if request.method == "POST":
-        data = request.json
+        data = _json_body()
+        if data is None:
+            return _api_error("Expected a JSON object.")
+        try:
+            amount = finance.parse_money(data.get("amount"))
+        except finance.MoneyError as exc:
+            return _api_error(str(exc))
+        conn = get_db()
         conn.execute(
             "INSERT INTO income (amount, date, reference) VALUES (?,?,?)",
-            (data["amount"], data["date"], data.get("reference", ""))
+            (float(amount), data["date"], data.get("reference", ""))
         )
         conn.commit()
         eid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
@@ -841,6 +1087,7 @@ def api_income():
         conn.close()
         return jsonify(row), 201
     else:
+        conn = get_db()
         rows = [dict(r) for r in conn.execute("SELECT * FROM income ORDER BY date DESC").fetchall()]
         conn.close()
         return jsonify(rows)
@@ -848,9 +1095,20 @@ def api_income():
 
 @app.route("/api/invoices", methods=["GET", "POST"])
 def api_invoices():
-    conn = get_db()
     if request.method == "POST":
-        data = request.json
+        data = _json_body()
+        if data is None:
+            return _api_error("Expected a JSON object.")
+        lines = data.get("lines", [])
+        if not isinstance(lines, list) or not all(isinstance(ln, dict) for ln in lines):
+            return _api_error("lines must be a list of objects.")
+        # Validate every line before writing anything, so a bad line cannot
+        # leave a half-created invoice behind.
+        try:
+            values = [_invoice_line_values(line) for line in lines]
+        except finance.MoneyError as exc:
+            return _api_error(str(exc))
+        conn = get_db()
         inv_num = next_invoice_number(conn)
         conn.execute(
             "INSERT INTO invoices (invoice_number, customer_id, date, due_date, notes) VALUES (?,?,?,?,?)",
@@ -859,12 +1117,7 @@ def api_invoices():
         )
         inv_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
 
-        for line in data.get("lines", []):
-            hours = float(line.get("hours", 0) or 0)
-            rate = float(line.get("rate", 0) or 0)
-            amount = float(line.get("amount", 0) or 0)
-            if hours and rate and not amount:
-                amount = hours * rate
+        for line, (hours, rate, amount) in zip(lines, values, strict=True):
             conn.execute(
                 "INSERT INTO invoice_lines (invoice_id, description, date_attended, hours, rate, amount) VALUES (?,?,?,?,?,?)",
                 (inv_id, line["description"], line.get("date_attended", ""), hours, rate, amount)
@@ -876,6 +1129,7 @@ def api_invoices():
         conn.close()
         return jsonify(invoice), 201
     else:
+        conn = get_db()
         rows = [dict(r) for r in conn.execute(
             """SELECT i.*, c.name as customer_name,
                (SELECT COALESCE(SUM(amount),0) FROM invoice_lines WHERE invoice_id=i.id) as total
@@ -1035,6 +1289,9 @@ def backup_restore():
                 src.backup(dst)  # copy uploaded DB over the live one
             finally:
                 dst.close()
+            # A backup from before a later table (e.g. pensions) existed would
+            # otherwise leave the app without it until the next restart.
+            init_db()
         finally:
             src.close()
     except sqlite3.DatabaseError:

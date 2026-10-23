@@ -2,6 +2,8 @@
 {% block content %}
 <h1>Reports <span class="subtitle">{{ period_label }}</span></h1>
 
+{% if error %}<div class="alert alert-danger" role="alert"><span class="alert-icon" aria-hidden="true">!</span><div>{{ error }}</div></div>{% endif %}
+
 <form method="get" action="/reports" class="inline-form" style="margin-bottom:1.5rem;gap:0.5rem;flex-wrap:wrap;align-items:end">
     <div>
         <label for="ty">Tax Year</label>
@@ -40,4 +42,61 @@
         <div class="card-value">{{ unpaid_count }} ({{ unpaid_total|money }})</div>
     </div>
 </div>
+
+<h2 class="mt">Pension contributions</h2>
+<p class="hint" style="margin-bottom:0.75rem;">Personal pension payments are recorded on the
+   <a href="/pensions?ty={{ selected_ty }}">Pensions</a> page. They are not business expenses
+   and do not reduce the profit above.</p>
+<div class="cards">
+    <div class="card card-green">
+        <div class="card-label">Contributions paid</div>
+        <div class="card-value">{{ pension_totals.net|money }}</div>
+    </div>
+    <div class="card card-blue">
+        <div class="card-label">Basic-rate relief</div>
+        <div class="card-value">{{ pension_totals.relief|money }}</div>
+    </div>
+    <div class="card card-orange">
+        <div class="card-label">Gross contributions</div>
+        <div class="card-value">{{ pension_totals.gross|money }}</div>
+    </div>
+</div>
+
+{% if not selected_month %}
+<section class="panel mt">
+    <div class="panel-head">
+        <div>
+            <div class="panel-title">Self Assessment summary — {{ tax_year_label }}</div>
+            <div class="panel-sub">Figures to carry into your return. Coffer only knows what you have recorded; check them before you file.</div>
+        </div>
+        <a href="/export/tax-year.csv?ty={{ selected_ty }}" class="btn btn-sm btn-quiet">Download CSV</a>
+    </div>
+    <h3>Business</h3>
+    <table>
+        <tbody>
+            <tr><td>Income / turnover</td><td class="num">{{ income_total|money }}</td></tr>
+            <tr><td>Expenses</td><td class="num">{{ expenses_total|money }}</td></tr>
+            <tr class="total-row"><td>Profit</td><td class="num">{{ profit|money }}</td></tr>
+        </tbody>
+    </table>
+    <h3 class="mt">Pension Contributions</h3>
+    <table>
+        <tbody>
+            <tr><td>Net personal contributions paid</td><td class="num">{{ pension_totals.ras_net|money }}</td></tr>
+            <tr><td>Basic-rate relief added by provider</td><td class="num">{{ pension_totals.ras_relief|money }}</td></tr>
+            <tr class="total-row"><td><strong>Gross relief-at-source contributions</strong>
+                <div class="hint">The figure to declare as payments to registered pension schemes where basic-rate tax relief is claimed by your pension provider.</div></td>
+                <td class="num"><strong>{{ pension_totals.ras_gross|money }}</strong></td></tr>
+            {% if pension_totals.other_count %}
+            <tr><td>Contributions without relief at source (paid gross)
+                <div class="hint">Declared separately from relief-at-source payments — check which box applies to your scheme.</div></td>
+                <td class="num">{{ pension_totals.other_gross|money }}</td></tr>
+            {% endif %}
+        </tbody>
+    </table>
+    <p class="hint">Expenses are everything recorded in Coffer; confirm they are all allowable.
+       Higher- or additional-rate pension relief is not calculated here — it is worked out on your
+       return from the gross figure above.</p>
+</section>
+{% endif %}
 {% endblock %}

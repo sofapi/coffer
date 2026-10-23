@@ -74,8 +74,10 @@ DOUBLE-COUNTING RULES
       states this in the UI rather than silently guessing.
 """
 
+import re
 from calendar import monthrange
 from datetime import date, timedelta
+from decimal import ROUND_HALF_UP, Decimal
 
 _ONE_DAY = timedelta(days=1)
 
@@ -131,6 +133,55 @@ def month_range(start: date, end_exclusive: date) -> list[str]:
     return keys
 
 
+# ---------------------------------------------------------------------------
+# Money input
+# ---------------------------------------------------------------------------
+# Every amount typed into Coffer goes through parse_money before it is stored.
+# Only the plain form an <input type="number"> sends is accepted: digits, an
+# optional leading minus, and at most two decimal places ("1200", "1200.00",
+# ".5"). Anything else is rejected with a message rather than guessed at —
+# "1,200" might mean 1200 or 1.2, and SQLite would otherwise store it as text
+# and SUM() it as 1. Parsing is Decimal; callers convert to the column's type.
+
+PENNY = Decimal("0.01")
+MAX_AMOUNT = Decimal("10000000")  # typo guard, not a business rule
+_PLAIN_NUMBER = re.compile(r"-?(?:[0-9]+(?:\.[0-9]{1,2})?|\.[0-9]{1,2})")
+
+
+class MoneyError(ValueError):
+    """User-facing validation failure; the message is shown in the UI."""
+
+
+def parse_money(value, label: str = "Amount", *, required: bool = True,
+                allow_negative: bool = False) -> Decimal:
+    """User input -> Decimal with at most 2 dp, or MoneyError.
+
+    An empty value is an error when `required`, otherwise Decimal("0").
+    """
+    text = "" if value is None else str(value).strip()
+    if not text:
+        if required:
+            raise MoneyError(f"{label} is required.")
+        return Decimal("0")
+    if "," in text:
+        raise MoneyError(f"{label}: enter numbers without commas, e.g. 1200.00.")
+    if not _PLAIN_NUMBER.fullmatch(text):
+        if re.fullmatch(r"-?[0-9]*\.[0-9]{3,}", text):
+            raise MoneyError(f"{label} cannot have more than two decimal places.")
+        raise MoneyError(f"{label} must be a number, e.g. 1200.00.")
+    amount = Decimal(text)
+    if amount < 0 and not allow_negative:
+        raise MoneyError(f"{label} cannot be negative.")
+    if abs(amount) >= MAX_AMOUNT:
+        raise MoneyError(f"{label} is too large.")
+    return amount
+
+
+def round_money(amount: Decimal) -> Decimal:
+    """Half-up to the penny — how a person rounds, unlike float round()."""
+    return amount.quantize(PENNY, rounding=ROUND_HALF_UP)
+
+
 def parse_iso(value: str) -> date | None:
     try:
         return date.fromisoformat((value or "").strip())
@@ -184,6 +235,45 @@ def resolve_period(period: str, custom_from: str = "", custom_to: str = "",
         "prev_end": start.isoformat(),
         "month_count": len(months),
     }
+
+
+# ---------------------------------------------------------------------------
+# UK tax years
+# ---------------------------------------------------------------------------
+# A UK tax year runs 6 April to 5 April and is named by the calendar year it
+# starts in: 6 Apr 2026 -> 5 Apr 2027 is tax year 2026 ("2026/2027"). This is
+# the one implementation of that rule; the Reports page and pensions use it.
+
+def tax_year_of(d: date) -> int:
+    """Start year of the tax year containing d. 5 April belongs to the year
+    that is ending, 6 April to the one that is starting."""
+    return d.year if d >= date(d.year, 4, 6) else d.year - 1
+
+
+def tax_year_bounds(ty: int) -> tuple[str, str]:
+    """Half-open [start, end) ISO dates for tax year `ty`."""
+    return f"{ty}-04-06", f"{ty + 1}-04-06"
+
+
+# Earliest tax year Coffer accepts from a URL or form. Anything outside
+# [MIN_TAX_YEAR, current + 1] is a typo or a hand-edited URL, not a real year.
+MIN_TAX_YEAR = 2000
+
+
+def parse_tax_year(value, today: date | None = None) -> int | None:
+    """A tax year from user input ('2026'), or None if it is not a plain
+    number in the accepted range. Callers decide what None means for them."""
+    text = (value or "").strip()
+    if not text.isdigit() or len(text) != 4:
+        return None
+    ty = int(text)
+    latest = tax_year_of(today or date.today()) + 1
+    return ty if MIN_TAX_YEAR <= ty <= latest else None
+
+
+def tax_year_label(ty: int) -> str:
+    """2026 -> '2026/2027', matching the Reports page's tax-year picker."""
+    return f"{ty}/{ty + 1}"
 
 
 def month_label(key: str) -> str:

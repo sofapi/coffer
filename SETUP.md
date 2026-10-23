@@ -41,6 +41,15 @@ without a schema change and a value you have already chosen is never
 overwritten. No table is created, altered or dropped, so **rolling back to a
 previous image is safe** — the older code simply ignores the extra row.
 
+Pension contributions follow the same pattern. On boot Coffer runs
+`CREATE TABLE IF NOT EXISTS pension_contributions` (plus an index) and backfills
+one setting, `pension_relief_at_source_rate` (default `0.20`). No existing
+table is altered and no existing row is touched. Rolling back to an image from
+before pensions is also safe: the older code never reads the new table, so it
+simply ignores it, and the pension records are still there if you upgrade again.
+Restoring a backup taken before pensions existed recreates the empty table
+immediately.
+
 Take a backup first anyway (**Backup → Download backup**, or section 6 below).
 
 ### Build from source instead
@@ -104,17 +113,27 @@ Coffer keeps **all** state in one place: the `data/` directory, bind-mounted to
 
 ```
 data/
-├── coffer.db          # SQLite database — customers, invoices, income, expenses
+├── coffer.db          # SQLite database — customers, invoices, income, expenses, pensions
 └── invoice_logo.*     # uploaded invoice logo (if any)
 ```
 
 This directory is **git-ignored** and is the **only** thing you need to back up.
 Everything else (code, image) is reproducible from Git/GHCR.
 
-> Using a host path elsewhere? Copy `docker-compose.override.example.yml` →
-> `docker-compose.override.yml` and point the `data` mount at it. The override
-> file is git-ignored, so your host path never gets committed. (If you don't
-> need it, ignore this — the default `./data` works out of the box.)
+> Using a host path elsewhere? Create a `docker-compose.override.yml` next to
+> `docker-compose.yml` — Compose loads it automatically — and point the `data`
+> mount at your path (it replaces the `./data` mount because the container path
+> matches):
+>
+> ```yaml
+> services:
+>   coffer:
+>     volumes:
+>       - /your/host/path/coffer-data:/app/data
+> ```
+>
+> The override file is git-ignored, so your host path never gets committed. (If
+> you don't need it, ignore this — the default `./data` works out of the box.)
 
 ## 6. Backups & restore
 
@@ -144,6 +163,27 @@ docker compose up -d
 
 Backup archives contain real financial data — store them securely and **never**
 commit them (the `.gitignore` already blocks `*.tar.gz`, `backups/`, `*.bak`).
+
+### Auditing stored amounts
+
+Coffer has validated every amount since the pensions release, but older
+versions stored whatever was typed — so `1,200` could be saved as text and
+counted as **£1**. `audit_money.py` lists any income, expense or invoice-line
+value that is text, non-finite, has more than two decimal places, or is a
+now-rejected negative. It is **read-only** (it opens the file in SQLite's
+read-only/immutable mode and writes nothing) and should be pointed at a
+**copy** — e.g. a file from **Backup → Download backup** — not the live
+database:
+
+```bash
+docker run --rm -v "$PWD/coffer-backup-YYYYMMDD-HHMMSS.db:/audit/backup.db:ro" \
+  ghcr.io/sofapi/coffer:latest python audit_money.py /audit/backup.db
+```
+
+It prints the table, record id, stored value and problem for each finding, or
+`No problems found`. Exit status is 0 (clean), 1 (findings) or 2 (unreadable
+file). Findings are not fixed automatically: correct each one in the app (delete
+and re-enter it) once you have decided what the value should have been.
 
 ## 7. Security
 

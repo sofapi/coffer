@@ -1,6 +1,8 @@
-# Build the Coffer image and publish it to GitHub Container Registry (GHCR).
+# Test the Coffer app, then build its image and publish it to GitHub Container
+# Registry (GHCR). Publishing `needs` the test job, so a lint or test failure
+# means no image is pushed. Pull requests run the tests only.
 #
-# Result: `ghcr.io/sofapi/coffer:latest` (plus `:<short-sha>` and, for git tags,
+# Result: `ghcr.io/sofapi/coffer:latest` (plus `:sha-<short-sha>` and, for git tags,
 # `:vX.Y.Z`). Your server then deploys with `docker compose pull && up -d`.
 #
 # One-time setup: after the first successful run, open the package settings and
@@ -13,6 +15,7 @@ on:
   push:
     branches: [main]
     tags: ["v*"]
+  pull_request:
   workflow_dispatch:
 
 env:
@@ -20,7 +23,33 @@ env:
   IMAGE_NAME: ${{ github.repository }}   # → sofapi/coffer
 
 jobs:
+  test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"   # same as the Dockerfile's base image
+          cache: pip
+          cache-dependency-path: requirements*.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Lint
+        run: ruff check .
+
+      - name: Test
+        run: pytest
+
   build-and-push:
+    needs: test
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       contents: read

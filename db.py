@@ -11,6 +11,10 @@ LATER_SETTING_DEFAULTS = {
     # Chosen appearance. Value is a Palette id from theme.py; an unrecognised
     # value degrades to the default palette rather than breaking the UI.
     "theme_palette": "coffer-classic",
+    # Basic-rate relief applied to NEW relief-at-source pension contributions
+    # (see pensions.py). Each contribution stores the rate it was recorded
+    # with, so changing this never alters past figures.
+    "pension_relief_at_source_rate": "0.20",
 }
 
 
@@ -90,12 +94,32 @@ def init_db():
             value TEXT NOT NULL DEFAULT ''
         );
 
+        -- Personal pension contributions. Added after the initial release;
+        -- like every table here it is created on boot if missing, so an
+        -- existing database upgrades in place and no other table is touched.
+        -- Deliberately separate from `expenses`: a pension payment is not a
+        -- business cost and must never reduce Net/Profit. Money is integer
+        -- pence; relief and gross are derived in pensions.py, not stored.
+        CREATE TABLE IF NOT EXISTS pension_contributions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            date TEXT NOT NULL,
+            net_pence INTEGER NOT NULL CHECK (net_pence > 0),
+            relief_rate TEXT NOT NULL DEFAULT '0.20',
+            provider TEXT DEFAULT '',
+            contribution_type TEXT NOT NULL DEFAULT 'regular',
+            relief_method TEXT NOT NULL DEFAULT 'relief_at_source',
+            notes TEXT DEFAULT '',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+
         CREATE INDEX IF NOT EXISTS idx_expenses_date ON expenses(date);
         CREATE INDEX IF NOT EXISTS idx_income_date ON income(date);
         CREATE INDEX IF NOT EXISTS idx_invoices_date ON invoices(date);
         CREATE INDEX IF NOT EXISTS idx_invoices_status ON invoices(status);
         CREATE INDEX IF NOT EXISTS idx_invoices_customer_id ON invoices(customer_id);
         CREATE INDEX IF NOT EXISTS idx_invoice_lines_invoice_id ON invoice_lines(invoice_id);
+        CREATE INDEX IF NOT EXISTS idx_pension_contributions_date ON pension_contributions(date);
     """)
     # Seed default settings if empty
     existing = conn.execute("SELECT COUNT(*) as c FROM settings").fetchone()["c"]

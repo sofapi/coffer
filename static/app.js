@@ -23,6 +23,29 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    // Pension form: show the relief and gross the server will calculate.
+    // Integer pence with half-up rounding, matching pensions.split_contribution;
+    // this is only a preview — the saved figures always come from the server.
+    document.querySelectorAll('form[data-pension-form]').forEach(form => {
+        const out = form.querySelector('[data-pension-preview]');
+        const bp = Math.round(parseFloat(form.dataset.reliefRate) * 10000);
+        const fmt = p => '£' + (p / 100).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        const update = () => {
+            const net = Math.round(parseFloat(form.elements.amount_paid.value) * 100);
+            if (!(net > 0)) { out.textContent = ''; return; }
+            let gross = net;
+            if (form.elements.relief_method.value === 'relief_at_source' && bp > 0) {
+                const d = 10000 - bp;
+                gross = Math.floor((2 * net * 10000 + d) / (2 * d));
+            }
+            out.textContent = 'Paid ' + fmt(net) + ' · Tax relief added ' + fmt(gross - net) +
+                ' · Gross contribution ' + fmt(gross);
+        };
+        form.addEventListener('input', update);
+        form.addEventListener('change', update);
+        update();
+    });
+
     document.querySelectorAll('form[data-confirm]').forEach(form => {
         form.addEventListener('submit', e => {
             if (!window.confirm(form.dataset.confirm)) {

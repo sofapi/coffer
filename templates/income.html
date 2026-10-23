@@ -3,8 +3,10 @@
 {% block content %}
 <h1>Income</h1>
 
+{% if error %}<div class="alert alert-danger" role="alert"><span class="alert-icon" aria-hidden="true">!</span><div>{{ error }}</div></div>{% endif %}
+
 <form method="POST" action="/income/add" class="inline-form">
-    <input type="number" name="amount" step="0.01" placeholder="Amount" required>
+    <input type="number" name="amount" step="0.01" min="0" placeholder="Amount" required>
     <input type="date" name="date" required>
     <input type="text" name="reference" placeholder="Reference / description">
     <button type="submit" class="btn">Add Income</button>

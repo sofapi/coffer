@@ -14,7 +14,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Application code. Runtime data (the SQLite DB + uploaded logos) is NOT baked
 # in — it lives in the bind-mounted /app/data volume at runtime.
-COPY app.py db.py finance.py pdf_gen.py theme.py ./
+COPY app.py audit_money.py db.py finance.py pdf_gen.py pensions.py theme.py ./
 COPY static ./static
 COPY templates ./templates
 
