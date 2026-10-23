@@ -28,11 +28,14 @@ own right and must not be bundled with feature work.
 
 ### How values are calculated today
 
-- **Entry.** Web forms and the REST API insert `request.form["amount"]` /
-  `data["amount"]` without parsing (`/expenses/add`, `/income/add`,
-  `/api/expenses`, `/api/income`). Invoice lines go through `float()` and, when
-  no amount is given, `amount = hours * rate` — stored unrounded (1.5 h ×
-  £33.33 = `49.995`).
+- **Entry.** Every money input (`/income/add`, `/expenses/add`,
+  `/invoices/<id>/add-line`, `/api/income`, `/api/expenses`, `/api/invoices`)
+  is parsed with `finance.parse_money` (Decimal, at most 2 dp) and then
+  converted with `float()` for the `REAL` column. A blank line amount is
+  `hours * rate` in Decimal, rounded half-up to the penny. *Before* that
+  validation was added, amounts were stored unparsed (text included) and the
+  line product was stored unrounded (1.5 h × £33.33 = `49.995`) — existing
+  databases may still hold such rows; `audit_money.py` lists them.
 - **Aggregation.** `SUM(amount)` in SQLite (double arithmetic), then:
   - `finance.py` (dashboard) rounds each result with `round(x, 2)`;
   - the Reports page subtracts unrounded sums and formats with the `money`
@@ -58,11 +61,11 @@ own right and must not be bundled with feature work.
    a CSV's rows can sum to a penny different from the Reports total.
 4. **Line total vs PDF.** A PDF prints each line rounded and a total of the
    unrounded values, so the printed lines may not add up to the printed total.
-5. **Unvalidated input (separate, worse).** Because amounts are not parsed, a
-   non-numeric value is stored as TEXT (SQLite type affinity) and `SUM` coerces
-   it: `'abc'` counts as `0`, and `'1,200'` counts as **`1`**. This is a
-   validation defect rather than a float defect, and should be fixed first
-   (see §2) — otherwise a migration would have to decide what such rows mean.
+5. **Rows stored before validation (separate, worse).** Amounts used to be
+   stored unparsed, so a non-numeric value was kept as TEXT (SQLite type
+   affinity) and `SUM` coerces it: `'abc'` counts as `0`, and `'1,200'` counts
+   as **`1`**. New entry is now validated (§2), but existing rows are not
+   changed; run `audit_money.py` against a backup to find any.
 
 ### Migration that would eventually be required
 
@@ -74,11 +77,12 @@ at one documented point (when a line amount is created).
 
 Steps:
 
-1. **Fix input validation first** (§2) so no new bad rows appear.
-2. **Audit existing data.** Report every row where `typeof(amount) != 'real'`,
-   where `amount` is not within 1e-9 of a whole number of pence, or where it is
-   negative/zero. Each needs a human decision before conversion; the migration
-   must refuse to run while any remain unresolved.
+1. ~~**Fix input validation first** (§2) so no new bad rows appear.~~ Done for
+   money values.
+2. **Audit existing data** with `audit_money.py` (text/NULL/BLOB values,
+   non-finite values, sub-penny values, now-prohibited negatives). Each finding
+   needs a human decision before conversion; the migration must refuse to run
+   while any remain unresolved.
 3. **Additive schema change.** Add the new `*_pence` columns alongside the old
    ones (SQLite `ALTER TABLE ... ADD COLUMN` is safe and instant). Do not drop
    or rewrite the `REAL` columns in the same release.
@@ -117,13 +121,24 @@ backup**), never the live file:
 
 ---
 
-## 2. Income, expense and invoice input is not validated
+## 2. Income, expense and invoice input validation — partly done
 
-`/expenses/add`, `/income/add`, `/api/expenses`, `/api/income`, `/api/invoices`,
-`/invoices/<id>/add-line` and `/invoices/<id>/status` write request values
-straight to the database. Consequences: non-numeric or comma-formatted amounts
-are stored as text and miscounted (see §1, item 5); malformed dates are stored
-and fall outside every date-range query; a missing field returns a 400/500
-rather than a message; invoice status accepts any string. Fix with the same
-pattern as pensions (`pensions.validate_form` + redirect with `?error=`), with
-tests, before attempting §1.
+**Money values: done.** All six routes that store an amount, rate or hours
+validate with `finance.parse_money` and reject malformed input with the normal
+error alert (forms) or a `400 {"error": ...}` (API), writing nothing. Rules:
+plain digits with at most two decimal places; no commas, symbols, exponents,
+NaN or Infinity; only expenses may be negative (the existing refund stand-in);
+under £10,000,000. Values stored before this change are reported by
+`audit_money.py`; they are not altered.
+
+**Still open — other fields on the same routes:**
+- Dates are not validated: a malformed date is stored and then falls outside
+  every date-range query (forms and API).
+- A missing required non-money field (`date`, `description`, `customer_id`)
+  returns a 400 from the form routes and a 500 (`KeyError`) from the API.
+- `/invoices/<id>/status` accepts any string as a status.
+- `/api/invoices` accepts a `customer_id` that does not exist (foreign keys
+  are on, so this is a 500 rather than bad data).
+
+Fix with the same pattern (validate, then redirect with `?error=` or return
+400), with tests.

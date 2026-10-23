@@ -67,9 +67,7 @@ CONTRIBUTION_TYPES = {
 RELIEF_RATE_SETTING_KEY = "pension_relief_at_source_rate"
 DEFAULT_RELIEF_RATE = "0.20"
 
-_PENNY = Decimal("0.01")
-# Guards against typos (and Decimal precision limits), not a tax rule.
-_MAX_AMOUNT = Decimal("10000000")
+_PENNY = finance.PENNY
 
 
 class PensionError(ValueError):
@@ -104,18 +102,14 @@ def configured_rate(settings: dict) -> Decimal:
 
 
 def parse_amount_to_pence(value) -> int:
-    """'800', '800.5', '£1,200.00' -> pence. Must be positive, at most 2dp."""
-    text = str(value or "").strip().replace(",", "").lstrip(finance.CURRENCY_SYMBOL)
+    """'800', '800.50' -> pence. Must be positive; formatting rules (no commas,
+    at most 2 dp) are finance.parse_money's, shared with every other amount."""
     try:
-        amount = Decimal(text)
-    except InvalidOperation as exc:
-        raise PensionError("Enter the amount paid, e.g. 400.00.") from exc
-    if not amount.is_finite() or amount <= 0:
+        amount = finance.parse_money(value, "The amount paid")
+    except finance.MoneyError as exc:
+        raise PensionError(str(exc)) from exc
+    if amount <= 0:
         raise PensionError("The amount paid must be more than zero.")
-    if amount >= _MAX_AMOUNT:
-        raise PensionError("That amount is too large.")
-    if amount != amount.quantize(_PENNY):
-        raise PensionError("The amount paid cannot have fractions of a penny.")
     return int(amount * 100)
 
 

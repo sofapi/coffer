@@ -52,14 +52,16 @@
     </tbody>
 </table>
 
+{% if error %}<div class="alert alert-danger" role="alert"><span class="alert-icon" aria-hidden="true">!</span><div>{{ error }}</div></div>{% endif %}
+
 <form method="POST" action="/invoices/{{ invoice.id }}/add-line" class="form-card">
     <h3>Add Line Item</h3>
     <div class="form-row">
         <input type="text" name="description" placeholder="Description" required>
         <input type="date" name="date_attended" placeholder="Date attended">
-        <input type="number" name="hours" step="0.25" placeholder="Hours" class="short" id="line-hours">
-        <input type="number" name="rate" step="0.01" placeholder="Rate (&pound;/hr)" class="short" id="line-rate">
-        <input type="number" name="amount" step="0.01" placeholder="Amount (auto)" class="short" id="line-amount">
+        <input type="number" name="hours" step="0.25" min="0" placeholder="Hours" class="short" id="line-hours">
+        <input type="number" name="rate" step="0.01" min="0" placeholder="Rate (&pound;/hr)" class="short" id="line-rate">
+        <input type="number" name="amount" step="0.01" min="0" placeholder="Amount (auto)" class="short" id="line-amount">
         <button type="submit" class="btn">Add Line</button>
     </div>
     <p class="hint">Leave amount blank to auto-calculate from hours x rate</p>

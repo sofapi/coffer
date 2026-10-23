@@ -346,6 +346,39 @@ def api_dashboard_performance():
         conn.close()
 
 
+# --- Money input ---
+# Amounts are validated with finance.parse_money (Decimal) and only then
+# converted to float, because the legacy income / expenses / invoice_lines
+# columns are REAL. See TECH-DEBT.md before changing that.
+#
+# Negative amounts: allowed for expenses only — a negative expense is the
+# documented stand-in for a refund (see test_finance). Income, rates, hours and
+# invoice line amounts must not be negative.
+
+def _invoice_line_values(src):
+    """(hours, rate, amount) as floats from a form or JSON line, or MoneyError.
+
+    As before, a blank amount is filled from hours x rate; that product is now
+    rounded half-up to the penny instead of being stored unrounded.
+    """
+    hours = finance.parse_money(src.get("hours"), "Hours", required=False)
+    rate = finance.parse_money(src.get("rate"), "Rate", required=False)
+    amount = finance.parse_money(src.get("amount"), "Line amount", required=False)
+    if hours and rate and not amount:
+        amount = finance.round_money(hours * rate)
+    return float(hours), float(rate), float(amount)
+
+
+def _json_body():
+    """The request's JSON object, or None if it is missing or not an object."""
+    data = request.get_json(silent=True)
+    return data if isinstance(data, dict) else None
+
+
+def _api_error(message):
+    return jsonify({"error": message}), 400
+
+
 # --- Expenses ---
 
 @app.route("/expenses")
@@ -353,15 +386,19 @@ def expenses_list():
     conn = get_db()
     rows = conn.execute("SELECT * FROM expenses ORDER BY date DESC").fetchall()
     conn.close()
-    return render_template("expenses.html", expenses=rows)
+    return render_template("expenses.html", expenses=rows, error=request.args.get("error"))
 
 
 @app.route("/expenses/add", methods=["POST"])
 def expenses_add():
+    try:
+        amount = finance.parse_money(request.form.get("amount"), allow_negative=True)
+    except finance.MoneyError as exc:
+        return redirect(url_for("expenses_list", error=str(exc)))
     conn = get_db()
     conn.execute(
         "INSERT INTO expenses (amount, date, reference, category) VALUES (?,?,?,?)",
-        (request.form["amount"], request.form["date"],
+        (float(amount), request.form["date"],
          request.form.get("reference", ""), request.form.get("category", ""))
     )
     conn.commit()
@@ -385,15 +422,19 @@ def income_list():
     conn = get_db()
     rows = conn.execute("SELECT * FROM income ORDER BY date DESC").fetchall()
     conn.close()
-    return render_template("income.html", income=rows)
+    return render_template("income.html", income=rows, error=request.args.get("error"))
 
 
 @app.route("/income/add", methods=["POST"])
 def income_add():
+    try:
+        amount = finance.parse_money(request.form.get("amount"))
+    except finance.MoneyError as exc:
+        return redirect(url_for("income_list", error=str(exc)))
     conn = get_db()
     conn.execute(
         "INSERT INTO income (amount, date, reference) VALUES (?,?,?)",
-        (request.form["amount"], request.form["date"], request.form.get("reference", ""))
+        (float(amount), request.form["date"], request.form.get("reference", ""))
     )
     conn.commit()
     conn.close()
@@ -609,16 +650,16 @@ def invoice_detail(id):
     lines = conn.execute("SELECT * FROM invoice_lines WHERE invoice_id=? ORDER BY id", (id,)).fetchall()
     total = sum(line["amount"] for line in lines)
     conn.close()
-    return render_template("invoice_detail.html", invoice=invoice, customer=customer, lines=lines, total=total)
+    return render_template("invoice_detail.html", invoice=invoice, customer=customer, lines=lines, total=total,
+                           error=request.args.get("error"))
 
 
 @app.route("/invoices/<int:id>/add-line", methods=["POST"])
 def invoice_add_line(id):
-    hours = float(request.form.get("hours", 0) or 0)
-    rate = float(request.form.get("rate", 0) or 0)
-    amount = float(request.form.get("amount", 0) or 0)
-    if hours and rate and not amount:
-        amount = hours * rate
+    try:
+        hours, rate, amount = _invoice_line_values(request.form)
+    except finance.MoneyError as exc:
+        return redirect(url_for("invoice_detail", id=id, error=str(exc)))
 
     conn = get_db()
     conn.execute(
@@ -1000,12 +1041,18 @@ def export_tax_year_csv():
 
 @app.route("/api/expenses", methods=["GET", "POST"])
 def api_expenses():
-    conn = get_db()
     if request.method == "POST":
-        data = request.json
+        data = _json_body()
+        if data is None:
+            return _api_error("Expected a JSON object.")
+        try:
+            amount = finance.parse_money(data.get("amount"), allow_negative=True)
+        except finance.MoneyError as exc:
+            return _api_error(str(exc))
+        conn = get_db()
         conn.execute(
             "INSERT INTO expenses (amount, date, reference, category) VALUES (?,?,?,?)",
-            (data["amount"], data["date"], data.get("reference", ""), data.get("category", ""))
+            (float(amount), data["date"], data.get("reference", ""), data.get("category", ""))
         )
         conn.commit()
         eid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
@@ -1013,6 +1060,7 @@ def api_expenses():
         conn.close()
         return jsonify(row), 201
     else:
+        conn = get_db()
         rows = [dict(r) for r in conn.execute("SELECT * FROM expenses ORDER BY date DESC").fetchall()]
         conn.close()
         return jsonify(rows)
@@ -1020,12 +1068,18 @@ def api_expenses():
 
 @app.route("/api/income", methods=["GET", "POST"])
 def api_income():
-    conn = get_db()
     if request.method == "POST":
-        data = request.json
+        data = _json_body()
+        if data is None:
+            return _api_error("Expected a JSON object.")
+        try:
+            amount = finance.parse_money(data.get("amount"))
+        except finance.MoneyError as exc:
+            return _api_error(str(exc))
+        conn = get_db()
         conn.execute(
             "INSERT INTO income (amount, date, reference) VALUES (?,?,?)",
-            (data["amount"], data["date"], data.get("reference", ""))
+            (float(amount), data["date"], data.get("reference", ""))
         )
         conn.commit()
         eid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
@@ -1033,6 +1087,7 @@ def api_income():
         conn.close()
         return jsonify(row), 201
     else:
+        conn = get_db()
         rows = [dict(r) for r in conn.execute("SELECT * FROM income ORDER BY date DESC").fetchall()]
         conn.close()
         return jsonify(rows)
@@ -1040,9 +1095,20 @@ def api_income():
 
 @app.route("/api/invoices", methods=["GET", "POST"])
 def api_invoices():
-    conn = get_db()
     if request.method == "POST":
-        data = request.json
+        data = _json_body()
+        if data is None:
+            return _api_error("Expected a JSON object.")
+        lines = data.get("lines", [])
+        if not isinstance(lines, list) or not all(isinstance(ln, dict) for ln in lines):
+            return _api_error("lines must be a list of objects.")
+        # Validate every line before writing anything, so a bad line cannot
+        # leave a half-created invoice behind.
+        try:
+            values = [_invoice_line_values(line) for line in lines]
+        except finance.MoneyError as exc:
+            return _api_error(str(exc))
+        conn = get_db()
         inv_num = next_invoice_number(conn)
         conn.execute(
             "INSERT INTO invoices (invoice_number, customer_id, date, due_date, notes) VALUES (?,?,?,?,?)",
@@ -1051,12 +1117,7 @@ def api_invoices():
         )
         inv_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
 
-        for line in data.get("lines", []):
-            hours = float(line.get("hours", 0) or 0)
-            rate = float(line.get("rate", 0) or 0)
-            amount = float(line.get("amount", 0) or 0)
-            if hours and rate and not amount:
-                amount = hours * rate
+        for line, (hours, rate, amount) in zip(lines, values, strict=True):
             conn.execute(
                 "INSERT INTO invoice_lines (invoice_id, description, date_attended, hours, rate, amount) VALUES (?,?,?,?,?,?)",
                 (inv_id, line["description"], line.get("date_attended", ""), hours, rate, amount)
@@ -1068,6 +1129,7 @@ def api_invoices():
         conn.close()
         return jsonify(invoice), 201
     else:
+        conn = get_db()
         rows = [dict(r) for r in conn.execute(
             """SELECT i.*, c.name as customer_name,
                (SELECT COALESCE(SUM(amount),0) FROM invoice_lines WHERE invoice_id=i.id) as total

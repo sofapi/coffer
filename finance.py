@@ -74,8 +74,10 @@ DOUBLE-COUNTING RULES
       states this in the UI rather than silently guessing.
 """
 
+import re
 from calendar import monthrange
 from datetime import date, timedelta
+from decimal import ROUND_HALF_UP, Decimal
 
 _ONE_DAY = timedelta(days=1)
 
@@ -129,6 +131,55 @@ def month_range(start: date, end_exclusive: date) -> list[str]:
         keys.append(month_key(cur))
         cur = add_months(cur, 1)
     return keys
+
+
+# ---------------------------------------------------------------------------
+# Money input
+# ---------------------------------------------------------------------------
+# Every amount typed into Coffer goes through parse_money before it is stored.
+# Only the plain form an <input type="number"> sends is accepted: digits, an
+# optional leading minus, and at most two decimal places ("1200", "1200.00",
+# ".5"). Anything else is rejected with a message rather than guessed at —
+# "1,200" might mean 1200 or 1.2, and SQLite would otherwise store it as text
+# and SUM() it as 1. Parsing is Decimal; callers convert to the column's type.
+
+PENNY = Decimal("0.01")
+MAX_AMOUNT = Decimal("10000000")  # typo guard, not a business rule
+_PLAIN_NUMBER = re.compile(r"-?(?:[0-9]+(?:\.[0-9]{1,2})?|\.[0-9]{1,2})")
+
+
+class MoneyError(ValueError):
+    """User-facing validation failure; the message is shown in the UI."""
+
+
+def parse_money(value, label: str = "Amount", *, required: bool = True,
+                allow_negative: bool = False) -> Decimal:
+    """User input -> Decimal with at most 2 dp, or MoneyError.
+
+    An empty value is an error when `required`, otherwise Decimal("0").
+    """
+    text = "" if value is None else str(value).strip()
+    if not text:
+        if required:
+            raise MoneyError(f"{label} is required.")
+        return Decimal("0")
+    if "," in text:
+        raise MoneyError(f"{label}: enter numbers without commas, e.g. 1200.00.")
+    if not _PLAIN_NUMBER.fullmatch(text):
+        if re.fullmatch(r"-?[0-9]*\.[0-9]{3,}", text):
+            raise MoneyError(f"{label} cannot have more than two decimal places.")
+        raise MoneyError(f"{label} must be a number, e.g. 1200.00.")
+    amount = Decimal(text)
+    if amount < 0 and not allow_negative:
+        raise MoneyError(f"{label} cannot be negative.")
+    if abs(amount) >= MAX_AMOUNT:
+        raise MoneyError(f"{label} is too large.")
+    return amount
+
+
+def round_money(amount: Decimal) -> Decimal:
+    """Half-up to the penny — how a person rounds, unlike float round()."""
+    return amount.quantize(PENNY, rounding=ROUND_HALF_UP)
 
 
 def parse_iso(value: str) -> date | None:

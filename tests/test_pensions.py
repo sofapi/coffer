@@ -57,13 +57,14 @@ def test_relief_rate_is_not_hard_coded():
 
 
 @pytest.mark.parametrize("text, pence", [
-    ("800", 80000), ("800.5", 80050), ("1,200.00", 120000), ("£0.01", 1),
+    ("800", 80000), ("800.5", 80050), ("1200.00", 120000), ("0.01", 1),
 ])
 def test_amounts_parse_to_exact_pence(text, pence):
     assert pensions.parse_amount_to_pence(text) == pence
 
 
-@pytest.mark.parametrize("text", ["", "abc", "0", "-5", "1.005", "NaN", "Infinity", "1e30"])
+@pytest.mark.parametrize("text", ["", "abc", "0", "-5", "1.005", "NaN", "Infinity", "1e30",
+                                  "1,200.00", "£0.01"])
 def test_bad_amounts_are_rejected(text):
     with pytest.raises(pensions.PensionError):
         pensions.parse_amount_to_pence(text)

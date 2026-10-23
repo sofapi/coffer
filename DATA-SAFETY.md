@@ -33,6 +33,9 @@ them) and **`.dockerignore`** (so they can't leak into the published image).
 - `data/.gitkeep` — an empty placeholder so the folder exists; nothing else
   from `data/`.
 - `seed_sample.py` — **dummy** development data only.
+- `audit_money.py` — read-only checker; contains no data. Its *output* lists
+  real amounts from whatever database it reads, so don't paste that anywhere
+  public.
 - `tests/` — the automated test suite. Every test runs against its own
   throwaway SQLite file and uses invented data only (see below).
 
